@@ -465,76 +465,29 @@ class Instagram
      * @throws InstagramException
      * @throws InstagramNotFoundException
      */
+    /**
+     * Haal de meest recente posts van een account op via de publieke web_profile_info endpoint.
+     *
+     * Instagram vereist login voor de dedicated feed-endpoints (GraphQL POST met doc_id,
+     * /api/v1/feed/user/). De web_profile_info endpoint werkt wel publiek en retourneert
+     * doorgaans de laatste 12 posts. Gebruik `getMediasByUserId()` als je alleen het
+     * userId hebt — die resolvet eerst de username.
+     *
+     * @return list<Media>
+     * @throws InstagramNotFoundException
+     * @throws InstagramException
+     */
     public function getMediasByUsername(string $username, int $count = 12): array
     {
-        [$lsd, $csrf, $cookieString] = $this->fetchLsdAndCsrf();
-
-        if ($lsd === '') {
-            throw new InstagramException(
-                'Kon het LSD-token niet extraheren van de Instagram-homepage. '
-                . 'Instagram serveert mogelijk andere HTML (consent-pagina of bot-detectie). '
-                . 'Probeer cookies/proxy in te stellen of controleer of instagram.com bereikbaar is.',
-            );
-        }
-
-        $variables = json_encode([
-            'data' => [
-                'count'                                => $count,
-                'include_reel_media_seen_timestamp'    => true,
-                'include_relationship_info'            => true,
-                'latest_besties_reel_media'            => true,
-                'latest_reel_media'                    => true,
-            ],
-            'username' => $username,
-            '__relay_internal__pv__PolarisImmersiveFeedChainingEnabledrelayprovider' => false,
-        ]);
-
-        $postData = [
-            'av'                          => '0',
-            '__d'                         => 'www',
-            '__user'                      => '0',
-            '__a'                         => '1',
-            'fb_api_caller_class'         => 'RelayModern',
-            'fb_api_req_friendly_name'    => 'PolarisProfilePostsQuery',
-            'variables'                   => $variables,
-            'server_timestamps'           => 'true',
-            'doc_id'                      => static::GRAPHQL_POST_DOC_ID,
-        ];
-
-        $headers = $this->generateHeaders($this->userSession);
-        $headers['content-type']       = 'application/x-www-form-urlencoded';
-        $headers['origin']             = Endpoints::BASE_URL;
-        $headers['x-fb-friendly-name'] = 'PolarisProfilePostsQuery';
-        $headers['x-fb-lsd']           = $lsd;
-        $headers['x-bloks-version-id'] = static::GRAPHQL_BLOKS_VERSION_ID;
-        $headers['x-root-field-name']  = 'xdt_api__v1__feed__user_timeline_graphql_connection';
-        $headers['x-asbd-id']          = static::GRAPHQL_X_ASBD_ID;
-
-        if ($csrf !== '') {
-            $headers['x-csrftoken'] = $csrf;
-        }
-
-        // Stuur de cookies van de homepage mee — Instagram verwacht dat een browser
-        // eerder de homepage bezocht heeft en de cookies opgeslagen heeft.
-        if ($cookieString !== '') {
-            $headers['cookie'] = $cookieString;
-        }
-
-        $response = Request::post(
-            'https://www.instagram.com/graphql/query',
-            $headers,
-            $postData,
+        $response = Request::get(
+            Endpoints::getAccountPageLink($username),
+            $this->generateHeaders($this->userSession),
         );
 
         if (static::HTTP_NOT_FOUND === $response->code) {
             throw new InstagramNotFoundException('Account with given username does not exist.');
         }
         if (static::HTTP_OK !== $response->code) {
-            // Bij een 401 kunnen LSD/cookies verlopen zijn; cache wissen voor volgende poging.
-            if ($response->code === static::HTTP_UNAUTHORIZED && static::$instanceCache !== null) {
-                static::$instanceCache->delete(static::GRAPHQL_CACHE_KEY);
-            }
-
             throw new InstagramException(
                 'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
                 . 'Something went wrong. Please report issue.',
@@ -543,21 +496,18 @@ class Instagram
             );
         }
 
-        $arr   = $this->decodeRawBodyToJson($response->raw_body);
-        $edges = $arr['data']['xdt_api__v1__feed__user_timeline_graphql_connection']['edges'] ?? null;
+        $arr  = $this->decodeRawBodyToJson($response->raw_body);
+        $user = $arr['data']['user'] ?? null;
 
-        if (! is_array($edges)) {
-            // Onverwachte structuur — cache wissen zodat volgende request vers LSD+cookies ophaalt.
-            if (static::$instanceCache !== null) {
-                static::$instanceCache->delete(static::GRAPHQL_CACHE_KEY);
-            }
-
+        if (! is_array($user)) {
             throw new InstagramException(
-                'Unexpected response from Instagram GraphQL API. LSD-token mogelijk verlopen.',
+                'Kon geen gebruikersdata parseren uit de Instagram API response.',
                 $response->code,
                 static::getErrorBody($response->body),
             );
         }
+
+        $edges = $user['edge_owner_to_timeline_media']['edges'] ?? [];
 
         $medias = [];
         foreach ($edges as $edge) {

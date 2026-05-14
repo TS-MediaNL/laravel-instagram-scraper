@@ -30,8 +30,16 @@ class Request
 
         if ($body !== null) {
             $encoded = http_build_query($body);
-            $headers['Content-Type'] = 'application/x-www-form-urlencoded';
-            $stream = Utils::streamFor($encoded);
+            $stream  = Utils::streamFor($encoded);
+
+            // Alleen invullen als de caller de Content-Type nog niet gezet heeft.
+            $alreadySet = array_filter(
+                array_keys($headers),
+                static fn (string $k): bool => strtolower($k) === 'content-type',
+            );
+            if (empty($alreadySet)) {
+                $headers['Content-Type'] = 'application/x-www-form-urlencoded';
+            }
         }
 
         $request = new Psr7Request($method, $uri, $headers, $stream);
