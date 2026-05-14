@@ -2424,8 +2424,8 @@ class Instagram
      */
     public function loginWithSessionId($sessionId)
     {
-        $sessionParts = explode('%',$sessionId);
-        $session = ['sessionid' => $sessionId, 'ds_user_id' => $sessionParts[0], 'csrftoken' => md5( rand( 1, 5000 ) )];
+        $sessionParts = explode('%', $sessionId);
+        $session = ['sessionid' => $sessionId, 'ds_user_id' => $sessionParts[0], 'csrftoken' => md5((string) rand(1, 5000))];
 
         if (!$this->isLoggedIn($session)) {
             throw new InstagramAuthException('Login with session went wrong. Please report issue.');
