@@ -70,14 +70,28 @@ final class InstagramProfileClient
     }
 
     /**
-     * Haal de media op van een account via gebruikersnaam.
+     * Haal de posts op direct via een Account-object (meest efficiënt — geen extra lookup).
+     * Aanbevolen flow:
+     *   $account = $client->accountByUsername('nasa');
+     *   $posts   = $client->timelineByAccount($account);
+     *
+     * @return list<Media>
+     * @throws InstagramException
+     */
+    public function timelineByAccount(Account $account, int $count = 24): array
+    {
+        return $this->instagram->getMediasByUsername($account->getUsername(), $count);
+    }
+
+    /**
+     * Haal de posts op via gebruikersnaam.
      *
      * @return list<Media>
      * @throws InstagramException
      */
     public function timelineByUsername(string $username, int $count = 24): array
     {
-        return $this->instagram->getMedias($username, $count);
+        return $this->instagram->getMediasByUsername($username, $count);
     }
 
     /**

@@ -47,6 +47,15 @@ class Instagram
 
     const X_IG_APP_ID = '936619743392459';
 
+    /**
+     * GraphQL doc_id voor PolarisProfilePostsQuery.
+     * Wijzigt zelden; update samen met GRAPHQL_BLOKS_VERSION_ID als Instagram de JS-bundles ververst.
+     */
+    const GRAPHQL_POST_DOC_ID      = '27500569486209613';
+    const GRAPHQL_BLOKS_VERSION_ID = 'f0fd53409d7667526e529854656fe20159af8b76db89f40c333e593b51a2ce10';
+    const GRAPHQL_X_ASBD_ID        = '359341';
+    const GRAPHQL_CACHE_KEY        = 'tsmedia.ig_lsd_v1';
+
     /** @var CacheInterface $instanceCache */
     protected static $instanceCache = null;
 
@@ -363,6 +372,151 @@ class Instagram
         }
 
         return $headers;
+    }
+
+    /**
+     * Haal het LSD-token en CSRF-token op door de Instagram-homepage te bezoeken.
+     * De resultaten worden tot 30 minuten gecachet via PSR-16 als $instanceCache beschikbaar is.
+     *
+     * @return array{0: string, 1: string}  [lsd, csrf]
+     */
+    private function fetchLsdAndCsrf(): array
+    {
+        if (static::$instanceCache !== null) {
+            $cached = static::$instanceCache->get(static::GRAPHQL_CACHE_KEY);
+            if (is_array($cached) && ! empty($cached[0])) {
+                return $cached;
+            }
+        }
+
+        $response = Request::get(
+            Endpoints::BASE_URL . '/',
+            [
+                'accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'accept-language' => 'en-US,en;q=0.9',
+                'user-agent'      => $this->getUserAgent(),
+            ],
+        );
+
+        $csrf = '';
+        foreach ($response->headers as $name => $values) {
+            if (strtolower($name) === 'set-cookie') {
+                foreach ((array) $values as $cookie) {
+                    if (preg_match('/\bcsrftoken=([^;,\s]+)/i', $cookie, $m)) {
+                        $csrf = $m[1];
+                    }
+                }
+            }
+        }
+
+        $lsd = '';
+        if (preg_match('/"LSD",\[\],\{"token":"([^"]+)"\}/', $response->raw_body, $m)) {
+            $lsd = $m[1];
+        }
+
+        $result = [$lsd, $csrf];
+
+        if (static::$instanceCache !== null && $lsd !== '') {
+            static::$instanceCache->set(static::GRAPHQL_CACHE_KEY, $result, 1800);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Haal posts op via username via Instagram's interne GraphQL (doc_id aanpak).
+     * Werkt zonder authenticatie voor publieke profielen.
+     *
+     * @return Media[]
+     * @throws InstagramException
+     * @throws InstagramNotFoundException
+     */
+    public function getMediasByUsername(string $username, int $count = 12): array
+    {
+        [$lsd, $csrf] = $this->fetchLsdAndCsrf();
+
+        $variables = json_encode([
+            'data' => [
+                'count'                                => $count,
+                'include_reel_media_seen_timestamp'    => true,
+                'include_relationship_info'            => true,
+                'latest_besties_reel_media'            => true,
+                'latest_reel_media'                    => true,
+            ],
+            'username' => $username,
+            '__relay_internal__pv__PolarisImmersiveFeedChainingEnabledrelayprovider' => false,
+        ]);
+
+        $postData = [
+            'av'                          => '0',
+            '__d'                         => 'www',
+            '__user'                      => '0',
+            '__a'                         => '1',
+            'fb_api_caller_class'         => 'RelayModern',
+            'fb_api_req_friendly_name'    => 'PolarisProfilePostsQuery',
+            'variables'                   => $variables,
+            'server_timestamps'           => 'true',
+            'doc_id'                      => static::GRAPHQL_POST_DOC_ID,
+        ];
+
+        $headers = $this->generateHeaders($this->userSession);
+        $headers['content-type']       = 'application/x-www-form-urlencoded';
+        $headers['origin']             = Endpoints::BASE_URL;
+        $headers['x-fb-friendly-name'] = 'PolarisProfilePostsQuery';
+        $headers['x-fb-lsd']           = $lsd;
+        $headers['x-bloks-version-id'] = static::GRAPHQL_BLOKS_VERSION_ID;
+        $headers['x-root-field-name']  = 'xdt_api__v1__feed__user_timeline_graphql_connection';
+        $headers['x-asbd-id']          = static::GRAPHQL_X_ASBD_ID;
+
+        if ($csrf !== '') {
+            $headers['x-csrftoken'] = $csrf;
+        }
+
+        $response = Request::post(
+            'https://www.instagram.com/graphql/query',
+            $headers,
+            $postData,
+        );
+
+        if (static::HTTP_NOT_FOUND === $response->code) {
+            throw new InstagramNotFoundException('Account with given username does not exist.');
+        }
+        if (static::HTTP_OK !== $response->code) {
+            throw new InstagramException(
+                'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
+                . 'Something went wrong. Please report issue.',
+                $response->code,
+                static::getErrorBody($response->body),
+            );
+        }
+
+        $arr   = $this->decodeRawBodyToJson($response->raw_body);
+        $edges = $arr['data']['xdt_api__v1__feed__user_timeline_graphql_connection']['edges'] ?? null;
+
+        if (! is_array($edges)) {
+            // LSD-token mogelijk verlopen — cache verwijderen zodat volgende request vers ophaalt
+            if (static::$instanceCache !== null) {
+                static::$instanceCache->delete(static::GRAPHQL_CACHE_KEY);
+            }
+
+            throw new InstagramException(
+                'Unexpected response from Instagram GraphQL API. LSD-token mogelijk verlopen.',
+                $response->code,
+                static::getErrorBody($response->body),
+            );
+        }
+
+        $medias = [];
+        foreach ($edges as $edge) {
+            if (count($medias) >= $count) {
+                break;
+            }
+            if (isset($edge['node'])) {
+                $medias[] = Media::create($edge['node']);
+            }
+        }
+
+        return $medias;
     }
 
     /**
@@ -730,51 +884,45 @@ class Instagram
      */
     public function getMediasByUserId($id, $count = 12, $maxId = '')
     {
-        $medias          = [];
-        $isMoreAvailable = true;
+        // Probeer de username te resolven via de v1 user-info endpoint.
+        $username = $this->resolveUsernameById((int) $id);
 
-        while (count($medias) < $count && $isMoreAvailable) {
-            $url      = Endpoints::getUserFeedV1((int) $id, $count, (string) $maxId);
-            $response = Request::get($url, $this->generateHeaders($this->userSession));
+        return $this->getMediasByUsername($username, $count);
+    }
 
-            if (static::HTTP_NOT_FOUND === $response->code) {
-                throw new InstagramNotFoundException('Account with given id does not exist.');
-            }
-            if (static::HTTP_OK !== $response->code) {
-                throw new InstagramException(
-                    'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
-                    . 'Something went wrong. Please report issue.',
-                    $response->code,
-                    static::getErrorBody($response->body),
-                );
-            }
+    /**
+     * Zoek de username op bij een numeriek user-ID via de web v1 user-info endpoint.
+     *
+     * @throws InstagramNotFoundException
+     * @throws InstagramException
+     */
+    private function resolveUsernameById(int $id): string
+    {
+        $response = Request::get(
+            Endpoints::getUserInfoByIdV1($id),
+            $this->generateHeaders($this->userSession),
+        );
 
-            $arr = $this->decodeRawBodyToJson($response->raw_body);
-
-            if (!is_array($arr) || !isset($arr['items'])) {
-                throw new InstagramException(
-                    'Unexpected response format from Instagram feed API.',
-                    $response->code,
-                    static::getErrorBody($response->body),
-                );
-            }
-
-            if (empty($arr['items'])) {
-                return $medias;
-            }
-
-            foreach ($arr['items'] as $item) {
-                if (count($medias) >= $count) {
-                    return $medias;
-                }
-                $medias[] = Media::create($item);
-            }
-
-            $isMoreAvailable = (bool) ($arr['more_available'] ?? false);
-            $maxId           = (string) ($arr['next_max_id'] ?? '');
+        if (static::HTTP_NOT_FOUND === $response->code) {
+            throw new InstagramNotFoundException('Account with given id does not exist.');
         }
 
-        return $medias;
+        if (static::HTTP_OK === $response->code) {
+            $arr      = $this->decodeRawBodyToJson($response->raw_body);
+            $username = $arr['user']['username'] ?? null;
+
+            if (! empty($username)) {
+                return (string) $username;
+            }
+        }
+
+        // Endpoint vereist authenticatie of is onbereikbaar.
+        // Gooi een duidelijke foutmelding met alternatief.
+        throw new InstagramException(
+            'Instagram vereist authenticatie om een user-ID naar een username te resolven. '
+            . 'Gebruik getMediasByUsername($username) of geef het Account-object mee via InstagramProfileClient::timelineByAccount($account).',
+            $response->code,
+        );
     }
 
     /**

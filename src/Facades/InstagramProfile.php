@@ -15,10 +15,12 @@ use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Highlight;
 /**
  * @method static Instagram engine()
  * @method static Account accountByUsername(string $username)
+ * @method static Account|null accountOrNull(string $username)
+ * @method static list<Media> timelineByAccount(Account $account, int $count = 24)
+ * @method static list<Media> timelineByUsername(string $username, int $count = 24)
  * @method static list<Media> timelineByUserId(int $userId, int $count = 24, string $maxId = '')
  * @method static list<Media> highlightsByUserId(int $userId)
  * @method static list<Comment> commentsByShortCode(string $shortCode, int $count = 20, string $maxId = '')
- * @method static Account|null accountOrNull(string $username)
  *
  * @see InstagramProfileClient
  */
