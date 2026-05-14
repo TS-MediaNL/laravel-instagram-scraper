@@ -35,11 +35,12 @@ final class InstagramProfileClient
     }
 
     /**
-     * Geeft aan of er een actieve ingelogde sessie is.
+     * Geeft aan of er een actieve ingelogde sessie in geheugen staat.
+     * Gebaseerd op de aanwezigheid van een session ID — geen netwerkrequest.
      */
     public function isLoggedIn(): bool
     {
-        return $this->instagram->isLoggedIn();
+        return $this->instagram->hasActiveSession();
     }
 
     /**

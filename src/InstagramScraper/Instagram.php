@@ -887,7 +887,9 @@ class Instagram
      */
     public function getMediasByUserId($id, $count = 12, $maxId = '')
     {
-        if ($this->isLoggedIn()) {
+        // hasActiveSession() checkt $this->userSession direct — isLoggedIn() zou
+        // de cache raadplegen (leeg bij session-ID login) en een extra request maken.
+        if ($this->hasActiveSession()) {
             return $this->getAuthenticatedFeedByUserId((int) $id, $count, (string) $maxId);
         }
 
@@ -895,6 +897,15 @@ class Instagram
         $username = $this->resolveUsernameById((int) $id);
 
         return $this->getMediasByUsername($username, $count);
+    }
+
+    /**
+     * Geeft true als er een actieve sessie in geheugen staat (na login of loginWithSessionId).
+     * Gebruikt $this->userSession direct — geen netwerkrequest of cache-lookup.
+     */
+    public function hasActiveSession(): bool
+    {
+        return ! empty($this->userSession['sessionid']);
     }
 
     /**
