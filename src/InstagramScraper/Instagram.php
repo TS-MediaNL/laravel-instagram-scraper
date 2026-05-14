@@ -730,48 +730,50 @@ class Instagram
      */
     public function getMediasByUserId($id, $count = 12, $maxId = '')
     {
-        $index = 0;
-        $medias = [];
+        $medias          = [];
         $isMoreAvailable = true;
-        while ($index < $count && $isMoreAvailable) {
-            $variables = json_encode([
-                'id' => (string)$id,
-                'first' => (string)$count,
-                'after' => (string)$maxId
-            ]);
 
-            $response = Request::get(Endpoints::getAccountMediasJsonLink($variables), $this->generateHeaders($this->userSession, $this->generateGisToken($variables)));
+        while (count($medias) < $count && $isMoreAvailable) {
+            $url      = Endpoints::getUserFeedV1((int) $id, $count, (string) $maxId);
+            $response = Request::get($url, $this->generateHeaders($this->userSession));
 
             if (static::HTTP_NOT_FOUND === $response->code) {
                 throw new InstagramNotFoundException('Account with given id does not exist.');
             }
             if (static::HTTP_OK !== $response->code) {
-                throw new InstagramException('Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.' .
-                                             'Something went wrong. Please report issue.', $response->code, static::getErrorBody($response->body));
+                throw new InstagramException(
+                    'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
+                    . 'Something went wrong. Please report issue.',
+                    $response->code,
+                    static::getErrorBody($response->body),
+                );
             }
 
             $arr = $this->decodeRawBodyToJson($response->raw_body);
 
-            if (!is_array($arr)) {
-                throw new InstagramException('Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.' .
-                                             'Something went wrong. Please report issue.', $response->code, static::getErrorBody($response->body));
+            if (!is_array($arr) || !isset($arr['items'])) {
+                throw new InstagramException(
+                    'Unexpected response format from Instagram feed API.',
+                    $response->code,
+                    static::getErrorBody($response->body),
+                );
             }
 
-            $nodes = $arr['data']['user']['edge_owner_to_timeline_media']['edges'];
-            // fix - count takes longer/has more overhead
-            if (!isset($nodes) || empty($nodes)) {
-                return [];
+            if (empty($arr['items'])) {
+                return $medias;
             }
-            foreach ($nodes as $mediaArray) {
-                if ($index === $count) {
+
+            foreach ($arr['items'] as $item) {
+                if (count($medias) >= $count) {
                     return $medias;
                 }
-                $medias[] = Media::create($mediaArray['node']);
-                $index++;
+                $medias[] = Media::create($item);
             }
-            $maxId = $arr['data']['user']['edge_owner_to_timeline_media']['page_info']['end_cursor'];
-            $isMoreAvailable = $arr['data']['user']['edge_owner_to_timeline_media']['page_info']['has_next_page'];
+
+            $isMoreAvailable = (bool) ($arr['more_available'] ?? false);
+            $maxId           = (string) ($arr['next_max_id'] ?? '');
         }
+
         return $medias;
     }
 

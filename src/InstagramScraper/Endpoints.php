@@ -52,6 +52,12 @@ class Endpoints
     const THREADS_APPROVE_MULTIPLE_URL = 'https://i.instagram.com/api/v1/direct_v2/threads/approve_multiple/';
     const GRAPH_QL_QUERY_URL = 'https://www.instagram.com/graphql/query/?query_id={{queryId}}';
 
+    /**
+     * Stabiele v1 feed-endpoint — vervangt de verouderde GraphQL query_hash-variant.
+     * Geeft items, more_available en next_max_id terug.
+     */
+    const USER_FEED_V1 = 'https://www.instagram.com/api/v1/feed/user/{userId}/?count={count}&max_id={maxId}';
+
     private static int $requestMediaCount = 30;
 
     public static function setAccountMediasRequestCount(int $count): void
@@ -312,5 +318,13 @@ class Endpoints
     public static function getThreadsApproveMultipleUrl(): string
     {
         return static::THREADS_APPROVE_MULTIPLE_URL;
+    }
+
+    public static function getUserFeedV1(string|int $userId, int $count = 12, string $maxId = ''): string
+    {
+        $url = str_replace('{userId}', urlencode((string) $userId), static::USER_FEED_V1);
+        $url = str_replace('{count}', urlencode((string) $count), $url);
+
+        return str_replace('{maxId}', urlencode($maxId), $url);
     }
 }

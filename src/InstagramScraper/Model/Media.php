@@ -654,6 +654,9 @@ class Media extends AbstractModel
             case 'accessibility_caption':
                 $this->altText = $value;
                 break;
+            case 'play_count':
+                $this->videoViews = (int) $value;
+                break;
             case 'video_views':
                 $this->videoViews = $value;
                 $this->type = static::TYPE_VIDEO;
