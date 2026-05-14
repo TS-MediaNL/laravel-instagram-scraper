@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace TsMedia\LaravelInstagramScraper\InstagramScraper\Model;
 
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Endpoints;

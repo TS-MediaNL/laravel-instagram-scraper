@@ -46,7 +46,10 @@
         "laravel": {
             "providers": [
                 "TsMedia\\LaravelInstagramScraper\\LaravelInstagramScraperServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "InstagramProfile": "TsMedia\\LaravelInstagramScraper\\Facades\\InstagramProfile"
+            }
         }
     },
     "config": {

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace TsMedia\LaravelInstagramScraper\InstagramScraper;
 
 class Endpoints
@@ -33,7 +35,7 @@ class Endpoints
     const USER_TAGS = 'https://i.instagram.com/api/v1/usertags/{{accountId}}/feed/?count={{count}}';
     const USER_FEED = 'https://www.instagram.com/graphql/query/?query_id=17861995474116400&fetch_media_item_count=12&fetch_media_item_cursor=&fetch_comment_count=4&fetch_like=10';
     const USER_FEED2 = 'https://www.instagram.com/?__a=1';
-    const USER_FEED_hash = 'https://www.instagram.com/graphql/query/?query_hash=3f01472fb28fb8aca9ad9dbc9d4578ff';
+    const USER_FEED_HASH = 'https://www.instagram.com/graphql/query/?query_hash=3f01472fb28fb8aca9ad9dbc9d4578ff';
     const INSTAGRAM_QUERY_URL = 'https://www.instagram.com/query/';
     const INSTAGRAM_CDN_URL = 'https://scontent.cdninstagram.com/';
     const ACCOUNT_JSON_PRIVATE_INFO_BY_ID = 'https://i.instagram.com/api/v1/users/{userId}/info/';
@@ -48,260 +50,266 @@ class Endpoints
     const THREADS_URL = 'https://i.instagram.com/api/v1/direct_v2/inbox/?persistentBadging=true&folder=&limit={limit}&thread_message_limit={messageLimit}&cursor={cursor}';
     const THREADS_PENDING_REQUESTS_URL = 'https://i.instagram.com/api/v1/direct_v2/pending_inbox/?limit={limit}&cursor={cursor}';
     const THREADS_APPROVE_MULTIPLE_URL = 'https://i.instagram.com/api/v1/direct_v2/threads/approve_multiple/';
-
-    // Look alike??
-    const URL_SIMILAR = 'https://www.instagram.com/graphql/query/?query_id=17845312237175864&id=4663052';
-
     const GRAPH_QL_QUERY_URL = 'https://www.instagram.com/graphql/query/?query_id={{queryId}}';
 
-    private static $requestMediaCount = 30;
+    private static int $requestMediaCount = 30;
 
-    /**
-     * @param int $count
-     */
-    public static function setAccountMediasRequestCount($count)
+    public static function setAccountMediasRequestCount(int $count): void
     {
         static::$requestMediaCount = $count;
     }
 
-    public static function getAccountMediasRequestCount()
+    public static function getAccountMediasRequestCount(): int
     {
         return static::$requestMediaCount;
     }
 
-    public static function getAccountPageLink($username)
+    public static function getAccountPageLink(string $username): string
     {
         return str_replace('{username}', urlencode($username), static::ACCOUNT_PAGE);
     }
 
-    public static function getAccountJsonLink($username)
+    public static function getAccountJsonLink(string $username): string
     {
         return str_replace('{username}', urlencode($username), static::ACCOUNT_JSON_INFO);
     }
 
-    public static function getAccountJsonInfoLinkByAccountId($id)
+    public static function getAccountJsonInfoLinkByAccountId(string|int $id): string
     {
-        return str_replace('{userId}', urlencode($id), static::ACCOUNT_JSON_INFO_BY_ID);
+        return str_replace('{userId}', urlencode((string) $id), static::ACCOUNT_JSON_INFO_BY_ID);
     }
 
-    public static function getAccountJsonPrivateInfoLinkByAccountId($id)
+    public static function getAccountJsonPrivateInfoLinkByAccountId(string|int $id): string
     {
-        return str_replace('{userId}', urlencode($id), static::ACCOUNT_JSON_PRIVATE_INFO_BY_ID_2);
+        return str_replace('{userId}', urlencode((string) $id), static::ACCOUNT_JSON_PRIVATE_INFO_BY_ID_2);
     }
 
-    public static function getAccountMediasJsonLink($variables)
+    public static function getAccountMediasJsonLink(string $variables): string
     {
         return str_replace('{variables}', urlencode($variables), static::ACCOUNT_MEDIAS);
     }
 
-    public static function getAccountTaggedMediasJsonLink($variables)
+    public static function getAccountTaggedMediasJsonLink(string $variables): string
     {
         return str_replace('{variables}', urlencode($variables), static::ACCOUNT_TAGGED_MEDIAS);
     }
 
-    public static function getMediaPageLink($code)
+    public static function getMediaPageLink(string $code): string
     {
         return str_replace('{code}', urlencode($code), static::MEDIA_LINK);
     }
 
-    public static function getMediaJsonLink($code)
+    public static function getMediaJsonLink(string $code): string
     {
         return str_replace('{code}', urlencode($code), static::MEDIA_JSON_INFO);
     }
 
-    public static function getMediasJsonByLocationIdLink($facebookLocationId, $maxId = '')
+    public static function getMediasJsonByLocationIdLink(string $facebookLocationId, string $maxId = ''): string
     {
         $url = str_replace('{{facebookLocationId}}', urlencode($facebookLocationId), static::MEDIA_JSON_BY_LOCATION_ID);
+
         return str_replace('{{maxId}}', urlencode($maxId), $url);
     }
 
-    public static function getMediasJsonByTagLink($tag, $maxId = '')
+    public static function getMediasJsonByTagLink(string $tag, string $maxId = ''): string
     {
         $url = str_replace('{tag}', urlencode($tag), static::MEDIA_JSON_BY_TAG);
+
         return str_replace('{max_id}', urlencode($maxId), $url);
     }
 
-    public static function getGeneralSearchJsonLink($query, $count = 10)
+    public static function getGeneralSearchJsonLink(string $query, int $count = 10): string
     {
         $url = str_replace('{query}', urlencode($query), static::GENERAL_SEARCH);
-        return str_replace('{count}', urlencode($count), $url);
+
+        return str_replace('{count}', urlencode((string) $count), $url);
     }
 
-    public static function getCommentsBeforeCommentIdByCode($variables)
+    public static function getCommentsBeforeCommentIdByCode(string $variables): string
     {
         return str_replace('{variables}', urlencode($variables), static::COMMENTS_BEFORE_COMMENT_ID_BY_CODE);
     }
 
-    public static function getLastLikesByCodeLink($code)
+    public static function getLastLikesByCodeLink(string $code): string
     {
-        $url = str_replace('{{code}}', urlencode($code), static::LAST_LIKES_BY_CODE);
-        return $url;
+        return str_replace('{{code}}', urlencode($code), static::LAST_LIKES_BY_CODE);
     }
 
-    public static function getLastLikesByCode($code, $count, $lastLikeID)
+    public static function getLastLikesByCode(string $code, int $count, string $lastLikeID): string
     {
         $url = str_replace('{{shortcode}}', urlencode($code), static::LIKES_BY_SHORTCODE);
-        $url = str_replace('{{count}}', urlencode($count), $url);
-        $url = str_replace('{{likeId}}', urlencode($lastLikeID), $url);
+        $url = str_replace('{{count}}', urlencode((string) $count), $url);
 
-        return $url;
+        return str_replace('{{likeId}}', urlencode($lastLikeID), $url);
     }
 
-    public static function getActivityUrl()
+    public static function getActivityUrl(): string
     {
         return static::ACCOUNT_ACTIVITY;
     }
 
-    public static function getFollowUrl($accountId)
+    public static function getFollowUrl(string|int $accountId): string
     {
-        $url = str_replace('{{accountId}}', urlencode($accountId), static::FOLLOW_URL);
-        return $url;
+        return str_replace('{{accountId}}', urlencode((string) $accountId), static::FOLLOW_URL);
     }
 
-    public static function getUnfollowUrl($accountId)
+    public static function getUnfollowUrl(string|int $accountId): string
     {
-        $url = str_replace('{{accountId}}', urlencode($accountId), static::UNFOLLOW_URL);
-        return $url;
+        return str_replace('{{accountId}}', urlencode((string) $accountId), static::UNFOLLOW_URL);
     }
 
-    public static function getRemoveFollowerUrl($accountId)
+    public static function getRemoveFollowerUrl(string|int $accountId): string
     {
-        return str_replace('{{accountId}}', urlencode($accountId), static::REMOVE_FOLLOWER_URL);
+        return str_replace('{{accountId}}', urlencode((string) $accountId), static::REMOVE_FOLLOWER_URL);
     }
 
-    public static function getPendingUrl()
+    public static function getPendingUrl(): string
     {
-        return  static::PENDING_URL;
+        return static::PENDING_URL;
     }
 
-    public static function getInboxNewsUrl()
+    public static function getInboxNewsUrl(): string
     {
-        return  static::INBOX_NEWS_URL;
+        return static::INBOX_NEWS_URL;
     }
 
-    public static function getInboxNewsSeenUrl()
+    public static function getInboxNewsSeenUrl(): string
     {
-        return  static::INBOX_NEWS_SEEN_URL;
+        return static::INBOX_NEWS_SEEN_URL;
     }
 
-    public static function getUserTagsUrl($accountId, $count = 12)
+    public static function getUserTagsUrl(string|int $accountId, int $count = 12): string
     {
-        return str_replace(['{{accountId}}', '{{count}}'], [urlencode($accountId), urlencode($count)], static::USER_TAGS);
+        return str_replace(
+            ['{{accountId}}', '{{count}}'],
+            [urlencode((string) $accountId), urlencode((string) $count)],
+            static::USER_TAGS,
+        );
     }
 
-    public static function getFollowersJsonLink($accountId, $count, $after = '')
+    public static function getFollowersJsonLink(string|int $accountId, int $count, string $after = ''): string
     {
-        $url = str_replace('{{accountId}}', urlencode($accountId), static::FOLLOWERS_URL);
-        $url = str_replace('{{count}}', urlencode($count), $url);
+        $url = str_replace('{{accountId}}', urlencode((string) $accountId), static::FOLLOWERS_URL);
+        $url = str_replace('{{count}}', urlencode((string) $count), $url);
 
         if ($after === '') {
-            $url = str_replace('&after={{after}}', '', $url);
-        } else {
-            $url = str_replace('{{after}}', urlencode($after), $url);
+            return str_replace('&after={{after}}', '', $url);
         }
 
-        return $url;
+        return str_replace('{{after}}', urlencode($after), $url);
     }
 
-    public static function getFollowingJsonLink($accountId, $count, $after = '')
+    public static function getFollowingJsonLink(string|int $accountId, int $count, string $after = ''): string
     {
-        $url = str_replace('{{accountId}}', urlencode($accountId), static::FOLLOWING_URL);
-        $url = str_replace('{{count}}', urlencode($count), $url);
+        $url = str_replace('{{accountId}}', urlencode((string) $accountId), static::FOLLOWING_URL);
+        $url = str_replace('{{count}}', urlencode((string) $count), $url);
 
         if ($after === '') {
-            $url = str_replace('&after={{after}}', '', $url);
-        } else {
-            $url = str_replace('{{after}}', urlencode($after), $url);
+            return str_replace('&after={{after}}', '', $url);
         }
 
-        return $url;
+        return str_replace('{{after}}', urlencode($after), $url);
     }
 
-    public static function getFollowersUrl_v1($accountId)
+    public static function getFollowersUrlV1(string|int $accountId): string
     {
-        $url = str_replace('{{accountId}}', urlencode($accountId), static::FOLLOWERS_URL_V1);
-
-        return $url;
+        return str_replace('{{accountId}}', urlencode((string) $accountId), static::FOLLOWERS_URL_V1);
     }
 
-    public static function getFollowingUrl_v1($accountId)
+    /**
+     * @deprecated Use {@see self::getFollowersUrlV1()} instead.
+     */
+    public static function getFollowersUrl_v1(string|int $accountId): string
     {
-        $url = str_replace('{{accountId}}', urlencode($accountId), static::FOLLOWING_URL_V1);
-
-        return $url;
+        return self::getFollowersUrlV1($accountId);
     }
 
-    public static function getUserStoriesLink($variables=[])
+    public static function getFollowingUrlV1(string|int $accountId): string
     {
-        $url = self::getGraphQlUrl(InstagramQueryId::USER_STORIES, ['variables' => json_encode($variables)]);
-        return $url;
+        return str_replace('{{accountId}}', urlencode((string) $accountId), static::FOLLOWING_URL_V1);
     }
 
-    public static function getGraphQlUrl($queryId, $parameters)
+    /**
+     * @deprecated Use {@see self::getFollowingUrlV1()} instead.
+     */
+    public static function getFollowingUrl_v1(string|int $accountId): string
+    {
+        return self::getFollowingUrlV1($accountId);
+    }
+
+    /**
+     * @param array<string, mixed> $variables
+     */
+    public static function getUserStoriesLink(array $variables = []): string
+    {
+        return self::getGraphQlUrl(InstagramQueryId::USER_STORIES, ['variables' => json_encode($variables)]);
+    }
+
+    /**
+     * @param array<string, mixed> $parameters
+     */
+    public static function getGraphQlUrl(string $queryId, array $parameters = []): string
     {
         $url = str_replace('{{queryId}}', urlencode($queryId), static::GRAPH_QL_QUERY_URL);
-        if (!empty($parameters)) {
-            $query_string = http_build_query($parameters);
-            $url .= '&' . $query_string;
+
+        if (! empty($parameters)) {
+            $url .= '&' . http_build_query($parameters);
         }
-        return $url;
-    }
-
-    public static function getStoriesLink($variables)
-    {
-        $url = self::getGraphQlUrl(InstagramQueryId::STORIES, ['variables' => json_encode($variables)]);
-        return $url;
-    }
-
-    public static function getLikeUrl($mediaId)
-    {
-        return str_replace('{mediaId}', urlencode($mediaId), static::LIKE_URL);
-    }
-
-    public static function getUnlikeUrl($mediaId)
-    {
-        return str_replace('{mediaId}', urlencode($mediaId), static::UNLIKE_URL);
-    }
-
-    public static function getAddCommentUrl($mediaId)
-    {
-        return str_replace('{mediaId}', $mediaId, static::ADD_COMMENT_URL);
-    }
-
-    public static function getDeleteCommentUrl($mediaId, $commentId)
-    {
-        $url = str_replace('{mediaId}', $mediaId, static::DELETE_COMMENT_URL);
-        $url = str_replace('{commentId}', $commentId, $url);
-        return $url;
-    }
-
-    public static function getHighlightUrl($id)
-    {
-        return str_replace('{userId}', urlencode($id), static::HIGHLIGHT_URL);
-    }
-
-    public static function getThreadsUrl($limit, $messageLimit, $cursor)
-    {
-        $url = static::THREADS_URL;
-
-        $url = str_replace('{limit}', $limit, $url);
-        $url = str_replace('{messageLimit}', $messageLimit, $url);
-        $url = str_replace('{cursor}', $cursor, $url);
 
         return $url;
     }
 
-    public static function getThreadsPendingRequestsUrl($limit, $cursor = null)
+    /**
+     * @param array<string, mixed> $variables
+     */
+    public static function getStoriesLink(array $variables): string
     {
-        $url = static::THREADS_PENDING_REQUESTS_URL;
-
-        $url = str_replace('{limit}', $limit, $url);
-        $url = str_replace('{cursor}', $cursor, $url);
-
-        return $url;
+        return self::getGraphQlUrl(InstagramQueryId::STORIES, ['variables' => json_encode($variables)]);
     }
 
-    public static function getThreadsApproveMultipleUrl()
+    public static function getLikeUrl(string|int $mediaId): string
+    {
+        return str_replace('{mediaId}', urlencode((string) $mediaId), static::LIKE_URL);
+    }
+
+    public static function getUnlikeUrl(string|int $mediaId): string
+    {
+        return str_replace('{mediaId}', urlencode((string) $mediaId), static::UNLIKE_URL);
+    }
+
+    public static function getAddCommentUrl(string|int $mediaId): string
+    {
+        return str_replace('{mediaId}', (string) $mediaId, static::ADD_COMMENT_URL);
+    }
+
+    public static function getDeleteCommentUrl(string|int $mediaId, string|int $commentId): string
+    {
+        $url = str_replace('{mediaId}', (string) $mediaId, static::DELETE_COMMENT_URL);
+
+        return str_replace('{commentId}', (string) $commentId, $url);
+    }
+
+    public static function getHighlightUrl(string|int $userId): string
+    {
+        return str_replace('{userId}', urlencode((string) $userId), static::HIGHLIGHT_URL);
+    }
+
+    public static function getThreadsUrl(int $limit, int $messageLimit, string $cursor): string
+    {
+        $url = str_replace('{limit}', (string) $limit, static::THREADS_URL);
+        $url = str_replace('{messageLimit}', (string) $messageLimit, $url);
+
+        return str_replace('{cursor}', $cursor, $url);
+    }
+
+    public static function getThreadsPendingRequestsUrl(int $limit, ?string $cursor = null): string
+    {
+        $url = str_replace('{limit}', (string) $limit, static::THREADS_PENDING_REQUESTS_URL);
+
+        return str_replace('{cursor}', (string) $cursor, $url);
+    }
+
+    public static function getThreadsApproveMultipleUrl(): string
     {
         return static::THREADS_APPROVE_MULTIPLE_URL;
     }

@@ -1,38 +1,39 @@
 <?php
 
+declare(strict_types=1);
+
 namespace TsMedia\LaravelInstagramScraper\InstagramScraper\Http;
 
 use Psr\Http\Message\ResponseInterface;
 
-/**
- * Class Response
- * @package TsMedia\LaravelInstagramScraper\InstagramScraper\Http
- */
 class Response
 {
-    public $code;
-    public $raw_body;
-    public $body;
-    public $headers;
+    public readonly int $code;
+    public readonly string $raw_body;
+    /** @var mixed */
+    public readonly mixed $body;
+    /** @var array<string, array<int, string>> */
+    public readonly array $headers;
 
-    /**
-     * Response constructor.
-     * @param ResponseInterface $response
-     */
     public function __construct(ResponseInterface $response)
     {
-        $this->code     = $response->getStatusCode();
-        $this->headers  = $response->getHeaders();
-        $raw_body       = $response->getBody()->getContents();
-        $this->raw_body = $raw_body;
-        $this->body     = $raw_body;
+        $this->code    = $response->getStatusCode();
+        $this->headers = $response->getHeaders();
+        $rawBody       = $response->getBody()->getContents();
+        $this->raw_body = $rawBody;
 
-        if (function_exists('json_decode')) {
-            $json = json_decode($raw_body, false, 512, JSON_BIGINT_AS_STRING);
+        $json = json_decode($rawBody, false, 512, JSON_BIGINT_AS_STRING);
 
-            if (json_last_error() === JSON_ERROR_NONE) {
-                $this->body = $json;
-            }
-        }
+        $this->body = (json_last_error() === JSON_ERROR_NONE) ? $json : $rawBody;
+    }
+
+    public function isOk(): bool
+    {
+        return $this->code >= 200 && $this->code < 300;
+    }
+
+    public function isJson(): bool
+    {
+        return $this->body !== $this->raw_body;
     }
 }

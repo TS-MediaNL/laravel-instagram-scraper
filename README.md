@@ -1,182 +1,527 @@
-# laravel-instagram-scraper
+# Laravel Instagram Scraper
 
-Laravel-package om **publieke** Instagram-profielen uit te lezen (HTTP-scrape met Guzzle 7 / PSR-18). De kern-engine staat onder de namespace `TsMedia\LaravelInstagramScraper\InstagramScraper\` (eigen package-structuur; inhoudelijk gebaseerd op de MIT-licht **instagram-php-scraper**-familie).
-
-**Let op:** Instagram kan scraping blokkeren of wijzigen. Gebruik dit alleen waar dat juridisch en ethisch mag.
+Een Laravel package om **publieke** Instagram-profielen te scrapen via HTTP.  
+Gebouwd op **Laravel's eigen HTTP client** (PSR-18 adapter), met automatische retry, proxy-ondersteuning en volledige integratie in het Laravel service-container systeem.
 
 ---
 
-## Nieuw Laravel-project (aanbevolen flow)
+## Vereisten
 
-### 1. Project aanmaken
+| Vereiste | Versie |
+|---|---|
+| PHP | ^8.2 |
+| Laravel | ^11.0 \| ^12.0 |
+| ext-json | * |
+| ext-curl | * |
 
-```bash
-composer create-project laravel/laravel mijn-app
-cd mijn-app
-```
+---
 
-### 2. Package toevoegen
-
-**Optie A — vanaf GitHub (als je deze repo al hebt gepusht)**
-
-In `composer.json` van je app:
-
-```json
-"repositories": [
-    {
-        "type": "vcs",
-        "url": "https://github.com/TS-MediaNL/laravel-instagram-scraper.git"
-    }
-],
-"require": {
-    "tsmedia/laravel-instagram-scraper": "^0.2"
-}
-```
-
-Daarna:
+## Installatie
 
 ```bash
-composer update tsmedia/laravel-instagram-scraper
+composer require tsmedia/laravel-instagram-scraper
 ```
 
-**Optie B — lokaal als path (tijdens ontwikkelen)**
+Laravel registreert de service provider en de `InstagramProfile` facade automatisch via package auto-discovery.
 
-```json
-"repositories": [
-    {
-        "type": "path",
-        "url": "../laravel-instagram-scraper",
-        "options": { "symlink": true }
-    }
-],
-"require": {
-    "tsmedia/laravel-instagram-scraper": "@dev"
-}
-```
-
-Pas `url` aan naar waar je de package-map op schijf hebt staan.
-
-### 3. Config (optioneel)
+### Config publiceren (optioneel)
 
 ```bash
 php artisan vendor:publish --tag=instagram-scraper-config
 ```
 
-Daarna kun je in `.env` o.a. zetten:
+Dit plaatst `config/instagram-scraper.php` in je project zodat je alle opties kunt aanpassen.
 
-```env
+---
+
+## Configuratie
+
+Voeg de gewenste waarden toe aan je `.env`:
+
+```dotenv
+# Timeouts (seconden)
 INSTAGRAM_SCRAPER_TIMEOUT=60
 INSTAGRAM_SCRAPER_CONNECT_TIMEOUT=15
+
+# Automatische retry bij fouten
+INSTAGRAM_SCRAPER_RETRY_MAX=3          # Totaal aantal pogingen (1 = geen retry)
+INSTAGRAM_SCRAPER_RETRY_DELAY_MS=1000  # Basisvertraging in ms (wordt verdubbeld per poging)
+
+# Optioneel: vaste user-agent
+INSTAGRAM_SCRAPER_USER_AGENT=
+
+# Optioneel: HTTP proxy
+INSTAGRAM_SCRAPER_PROXY=http://user:pass@proxy.example.com:8080
 ```
 
-### 4. Gebruik in code
+### Retry-gedrag
 
-De package registreert automatisch (package discovery):
+De retry gebruikt **exponentiële backoff**: bij 3 pogingen en 1000ms basisvertraging zijn de wachttijden 1s → 2s → 4s.  
+Standaard wordt opnieuw geprobeerd bij statuscodes: `429`, `500`, `502`, `503`, `504` en bij verbindingsfouten.
 
-- `TsMedia\LaravelInstagramScraper\InstagramProfileClient` — **aanbevolen** entrypoint voor account + timeline.
-- `TsMedia\LaravelInstagramScraper\InstagramScraper\Instagram` — volledige engine voor alle overige methodes op de scraper.
+---
 
-**Voorbeeld in een controller of command:**
+## Gebruik
+
+### Via de `InstagramProfile` facade
+
+De makkelijkste manier — gebruik dit in controllers, jobs en commands:
+
+```php
+use TsMedia\LaravelInstagramScraper\Facades\InstagramProfile;
+
+// Accountinformatie ophalen
+$account = InstagramProfile::accountByUsername('nasa');
+
+echo $account->getUsername();       // nasa
+echo $account->getFullName();       // NASA
+echo $account->getBiography();      // Explore the universe...
+echo $account->getFollowersCount(); // 97000000
+echo $account->getMediaCount();     // 4200
+echo $account->getProfilePicUrl();  // https://...
+echo $account->isPrivate();         // false
+echo $account->isVerified();        // true
+```
+
+### Via dependency injection
+
+Aanbevolen in services en repositories — beter testbaar:
 
 ```php
 use TsMedia\LaravelInstagramScraper\InstagramProfileClient;
-use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramException;
-use TsMedia\LaravelInstagramScraper\Support\MediaPayloadFactory;
 
-public function __invoke()
+class InstagramService
 {
-    $instagram = app(InstagramProfileClient::class);
+    public function __construct(
+        private readonly InstagramProfileClient $instagram,
+    ) {}
 
-    try {
-        $account = $instagram->accountByUsername('instagram');
-        $userId = (int) $account->getId();
-        $posts = $instagram->timelineByUserId($userId, 12, '');
+    public function getProfile(string $username): array
+    {
+        $account = $this->instagram->accountByUsername($username);
 
-        // Optioneel: clip-achtige arrays voor eigen mappers
-        $clipItems = MediaPayloadFactory::videoClipItemsFromMedias($posts);
-    } catch (InstagramException $e) {
-        // rate limit, netwerk, gewijzigde HTML, enz.
+        return [
+            'username'   => $account->getUsername(),
+            'followers'  => $account->getFollowersCount(),
+            'is_private' => $account->isPrivate(),
+        ];
     }
 }
 ```
 
-**Alle methodes van de engine** (tags, comments, …) via dezelfde instantie:
+---
+
+## Alle beschikbare methoden
+
+### `accountByUsername(string $username): Account`
+
+Haal volledig account op via gebruikersnaam. Gooit `InstagramNotFoundException` als het account niet bestaat.
 
 ```php
-$engine = app(InstagramProfileClient::class)->engine();
-// $engine->getMediaById(...), enz.
+$account = InstagramProfile::accountByUsername('natgeo');
+
+$account->getId();               // numerieke user-ID (string)
+$account->getUsername();
+$account->getFullName();
+$account->getBiography();
+$account->getWebsite();
+$account->getFollowersCount();
+$account->getFollowsCount();
+$account->getMediaCount();
+$account->getProfilePicUrl();
+$account->getProfilePicUrlHd();
+$account->isPrivate();
+$account->isVerified();
 ```
-
-### 5. Vereisten
-
-- PHP **8.2+**
-- Extensies: `json`, `curl` (zie `composer.json` van de package)
 
 ---
 
-## Deze map als eigen GitHub-repository
+### `accountOrNull(string $username): ?Account`
 
-```bash
-cd /pad/naar/laravel-instagram-scraper
-git init
-git add .
-git commit -m "Initial commit: Laravel Instagram scraper package"
-git branch -M main
-git remote add origin https://github.com/TS-MediaNL/laravel-instagram-scraper.git
-git push -u origin main
-```
+Zoals `accountByUsername`, maar geeft `null` terug als het account niet bestaat — handig voor bulk-checks:
 
-Tag releases (bijv. `v0.2.0`) zodat consumer-apps op `^0.2` kunnen pinnen.
+```php
+$account = InstagramProfile::accountOrNull('might_not_exist');
 
-**Nog geen tags?** Gebruik tijdelijk in je Laravel-app:
-
-```json
-"require": {
-    "tsmedia/laravel-instagram-scraper": "dev-main as 0.2.0"
+if ($account === null) {
+    // account bestaat niet of is privé
 }
 ```
 
-(zolang `minimum-stability` op `stable` blijft, helpt de alias `as 0.2.0`.)
+---
 
-### Monorepo (bijv. Groteverbouwing.nl): van `path` naar GitHub
+### `timelineByUserId(int $userId, int $count = 24, string $maxId = ''): array`
 
-1. Zorg dat `https://github.com/TS-MediaNL/laravel-instagram-scraper` minstens `main` + `composer.json` heeft (eerste push, zie hierboven).
-2. Vervang in de **root** `composer.json` van je app het `path`-repository door:
+Haal de tijdlijn op van een specifiek account via de numerieke user-ID.  
+Gebruik `$maxId` (de `id` van de laatste `Media`) voor paginering.
 
-```json
-"repositories": [
+```php
+$medias = InstagramProfile::timelineByUserId(528817151, count: 12);
+
+foreach ($medias as $media) {
+    echo $media->getShortCode();              // Bxy123abc
+    echo $media->getType();                   // image | video | sidecar
+    echo $media->getCaption();                // onderschrift
+    echo $media->getLikesCount();
+    echo $media->getCommentsCount();
+    echo $media->getCreatedTime();            // Unix timestamp
+    echo $media->getImageHighResolutionUrl(); // thumbnail URL
+    echo $media->getLink();                   // https://www.instagram.com/p/Bxy123abc/
+}
+
+// Tweede pagina laden
+$lastId = end($medias)->getId();
+$page2  = InstagramProfile::timelineByUserId(528817151, count: 12, maxId: $lastId);
+```
+
+---
+
+### `timelineByUsername(string $username, int $count = 24): array`
+
+Korte variant als je alleen de gebruikersnaam weet (haalt userId intern op):
+
+```php
+$medias = InstagramProfile::timelineByUsername('nasa', count: 9);
+```
+
+---
+
+### `mediasByTag(string $tag, int $count = 24): array`
+
+Recente posts voor een hashtag:
+
+```php
+$medias = InstagramProfile::mediasByTag('amsterdam', count: 15);
+
+foreach ($medias as $media) {
+    echo $media->getShortCode();
+    echo $media->getCaption();
+}
+```
+
+---
+
+### `mediaByShortCode(string $shortCode): Media`
+
+Één post ophalen via de shortcode (het stuk in de URL na `/p/`):
+
+```php
+// URL: https://www.instagram.com/p/Bxy123abc/
+$media = InstagramProfile::mediaByShortCode('Bxy123abc');
+
+echo $media->getId();
+echo $media->getCaption();
+echo $media->getType();    // image | video | sidecar
+echo $media->getVideoUrl(); // bij type video
+```
+
+---
+
+### `commentsByShortCode(string $shortCode, int $count = 20, string $maxId = ''): array`
+
+Comments van een post ophalen:
+
+```php
+$comments = InstagramProfile::commentsByShortCode('Bxy123abc', count: 50);
+
+foreach ($comments as $comment) {
+    echo $comment->getText();
+    echo $comment->getCreatedAt();
+    echo $comment->getOwner()->getUsername();
+}
+```
+
+---
+
+### `highlightsByUserId(int $userId): array`
+
+Story highlights van een account:
+
+```php
+$highlights = InstagramProfile::highlightsByUserId(528817151);
+
+foreach ($highlights as $highlight) {
+    echo $highlight->getTitle();     // 'Behind the scenes'
+    echo $highlight->getCoverUrl();  // thumbnail
+}
+```
+
+---
+
+### `locationById(int $locationId): Location`
+
+Locatie-informatie op basis van een Facebook locatie-ID:
+
+```php
+$location = InstagramProfile::locationById(213385402);
+
+echo $location->getName();
+echo $location->getLat();
+echo $location->getLng();
+```
+
+---
+
+### `mediasByLocationId(int $locationId, int $count = 12): array`
+
+Recente posts bij een locatie:
+
+```php
+$medias = InstagramProfile::mediasByLocationId(213385402, count: 9);
+```
+
+---
+
+### `engine(): Instagram`
+
+Directe toegang tot de volledige scraper-engine voor geavanceerde operaties:
+
+```php
+$engine = InstagramProfile::engine();
+
+// Volgers ophalen (vereist login)
+$followers = $engine->getFollowers($userId, $count = 100);
+
+// Zoeken op tag
+$tags = $engine->searchTagsByTagName('amsterdam');
+
+// Inloggen met sessie
+$engine->login();
+```
+
+---
+
+## MediaPayloadFactory
+
+Transformeer `Media`-objecten naar een genormaliseerd array-formaat (compatibel met RocketAPI-structuur):
+
+```php
+use TsMedia\LaravelInstagramScraper\Support\MediaPayloadFactory;
+
+$medias = InstagramProfile::timelineByUserId(528817151, count: 24);
+
+// Alle video's als clip-payload
+$clips = MediaPayloadFactory::videoClipItemsFromMedias($medias);
+
+foreach ($clips as $clip) {
+    $clip['media']['pk'];          // ID
+    $clip['media']['code'];        // shortcode
+    $clip['media']['play_count'];  // views
+    $clip['media']['like_count'];
+    $clip['media']['comment_count'];
+    $clip['media']['caption']['text'];
+    $clip['media']['image_versions2']['candidates'][0]['url']; // thumbnail
+}
+
+// Opzoektabel: pk → true (voor snelle deduplicatie)
+$seen = MediaPayloadFactory::feedPkLookupFromMedias($medias);
+
+if (isset($seen[$someMediaId])) {
+    // al verwerkt
+}
+
+// Eén media naar clip-formaat
+$clip = MediaPayloadFactory::mediaToClipItem($medias[0]);
+```
+
+---
+
+## Foutafhandeling
+
+Alle exceptions staan in `TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\`:
+
+```php
+use TsMedia\LaravelInstagramScraper\Facades\InstagramProfile;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramAuthException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramNotFoundException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramAgeRestrictedException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Http\NetworkException;
+
+try {
+    $account = InstagramProfile::accountByUsername($username);
+
+} catch (InstagramNotFoundException $e) {
+    // Account bestaat niet
+    Log::warning("Instagram account niet gevonden: {$username}");
+
+} catch (InstagramAgeRestrictedException $e) {
+    // Account is leeftijdsbeperkt (403)
+    Log::info("Leeftijdsbeperkt account: {$username}");
+
+} catch (InstagramAuthException $e) {
+    // Authenticatie vereist of sessie verlopen (401)
+    Log::error('Instagram auth fout: ' . $e->getMessage());
+
+} catch (NetworkException $e) {
+    // Geen verbinding (DNS, timeout, proxy)
+    Log::error('Netwerkfout: ' . $e->getMessage());
+
+} catch (InstagramException $e) {
+    // Algemene Instagram fout — bevat HTTP-code en response body
+    Log::error("Instagram fout [{$e->getHttpCode()}]: {$e->getMessage()}");
+    Log::debug('Response body: ' . $e->getResponseBody());
+}
+```
+
+---
+
+## Gebruik in een Laravel Job
+
+```php
+<?php
+
+namespace App\Jobs;
+
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
+use TsMedia\LaravelInstagramScraper\InstagramProfileClient;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramNotFoundException;
+
+class SyncInstagramProfile implements ShouldQueue
+{
+    use Dispatchable, Queueable;
+
+    public int $tries = 3;
+    public int $backoff = 60;
+
+    public function __construct(
+        public readonly string $username,
+    ) {}
+
+    public function handle(InstagramProfileClient $instagram): void
     {
-        "type": "vcs",
-        "url": "https://github.com/TS-MediaNL/laravel-instagram-scraper.git"
+        $account = $instagram->accountOrNull($this->username);
+
+        if ($account === null) {
+            return;
+        }
+
+        \DB::table('instagram_profiles')->updateOrInsert(
+            ['username' => $account->getUsername()],
+            [
+                'full_name'       => $account->getFullName(),
+                'followers_count' => $account->getFollowersCount(),
+                'media_count'     => $account->getMediaCount(),
+                'is_verified'     => $account->isVerified(),
+                'synced_at'       => now(),
+            ],
+        );
     }
-],
-"require": {
-    "tsmedia/laravel-instagram-scraper": "^0.2"
 }
 ```
 
-(of `dev-main as 0.2.0` tot de eerste tag `v0.2.0` bestaat).
+---
 
-3. Verwijder daarna de map `packages/laravel-instagram-scraper` uit het monorepo als je alleen nog vanaf GitHub wilt installeren (eerst committen/pushen wat je nodig hebt).
+## Gebruik in een Artisan Command
 
-4. `composer update tsmedia/laravel-instagram-scraper`
+```php
+<?php
 
-**Let op:** Composer valideert elke VCS-repository direct. Een **lege** GitHub-repo zonder geldige `composer.json` op `main` laat **alle** `composer`-commando’s in dat project falen — eerst pushen, daarna pas `vcs` in `composer.json` zetten.
+namespace App\Console\Commands;
+
+use Illuminate\Console\Command;
+use TsMedia\LaravelInstagramScraper\Facades\InstagramProfile;
+use TsMedia\LaravelInstagramScraper\Support\MediaPayloadFactory;
+
+class FetchInstagramReels extends Command
+{
+    protected $signature   = 'instagram:reels {username} {--count=12}';
+    protected $description = 'Haal recente reels op voor een Instagram-account';
+
+    public function handle(): int
+    {
+        $username = $this->argument('username');
+        $count    = (int) $this->option('count');
+
+        $this->info("Account ophalen: {$username}");
+        $account  = InstagramProfile::accountByUsername($username);
+        $userId   = (int) $account->getId();
+
+        $this->info("Timeline ophalen ({$count} posts)...");
+        $medias = InstagramProfile::timelineByUserId($userId, $count);
+
+        $clips = MediaPayloadFactory::videoClipItemsFromMedias($medias);
+
+        $this->table(
+            ['Shortcode', 'Views', 'Likes'],
+            array_map(fn($clip) => [
+                $clip['media']['code'],
+                number_format($clip['media']['play_count']),
+                number_format($clip['media']['like_count']),
+            ], $clips),
+        );
+
+        $this->info(count($clips) . ' video(s) gevonden.');
+
+        return self::SUCCESS;
+    }
+}
+```
 
 ---
 
-## Structuur (eigen code)
+## Testen (Http::fake)
 
-| Onderdeel | Namespace / rol |
-|-----------|-----------------|
-| Laravel-serviceprovider, client | `TsMedia\LaravelInstagramScraper\` (`src/*.php`, `src/Support/`) |
-| Payload-hulp (`media` → nested array) | `TsMedia\LaravelInstagramScraper\Support\MediaPayloadFactory` |
-| HTTP-scrape-engine (modellen, requests) | `TsMedia\LaravelInstagramScraper\InstagramScraper\` |
+Omdat de package Laravel's HTTP client gebruikt kun je verzoeken mocken met `Http::fake()`:
 
-De engine is inhoudelijk verwant aan **instagram-php-scraper** (MIT); zie upstream voor oorspronkelijke auteurs. De Laravel-laag en namespace-indeling zijn TS-Media MIT (`LICENSE`).
+```php
+use Illuminate\Support\Facades\Http;
+use TsMedia\LaravelInstagramScraper\Facades\InstagramProfile;
+
+Http::fake([
+    'www.instagram.com/api/v1/users/web_profile_info/*' => Http::response(
+        file_get_contents(base_path('tests/fixtures/instagram_account.json')),
+        200,
+    ),
+]);
+
+$account = InstagramProfile::accountByUsername('nasa');
+
+Http::assertSent(fn ($request) =>
+    str_contains($request->url(), 'web_profile_info')
+);
+```
 
 ---
 
-## Overige mappen in je monorepo
+## HTTP-integratie
 
-Referentiekopies (andere forks of experimenten) horen **niet** in `composer.json` van je app tenzij je ze bewust als aparte dependency toevoegt. Eén dependency op `tsmedia/laravel-instagram-scraper` is genoeg.
+De package gebruikt **Laravel's eigen HTTP client** (`Illuminate\Http\Client`) als PSR-18 adapter.  
+Dat betekent:
+
+- **Logging**: alle requests verschijnen automatisch in Laravel Telescope / Debugbar
+- **Fake/Mock**: `Http::fake()` werkt out-of-the-box in tests
+- **Events**: `RequestSending`, `ResponseReceived`, `ConnectionFailed` worden gefired
+- **Macros**: je kunt eigen macros op de HTTP client registreren
+
+---
+
+## Configuratie-referentie
+
+```php
+// config/instagram-scraper.php
+return [
+    'http' => [
+        'timeout'         => 60,    // Maximale request-tijd in seconden
+        'connect_timeout' => 15,    // Maximale verbindingstijd in seconden
+        'http_errors'     => false, // Geen exceptions op HTTP-fouten (scraper doet eigen afhandeling)
+    ],
+
+    'retry' => [
+        'max_attempts' => 3,                            // Totaal aantal pogingen
+        'delay_ms'     => 1000,                         // Basisvertraging (exponentieel)
+        'on_codes'     => [429, 500, 502, 503, 504],    // Codes die retry triggeren
+    ],
+
+    'user_agent' => null, // Overschrijf de standaard user-agent (null = gebruik ingebouwde)
+    'proxy'      => null, // HTTP-proxy URL (null = geen proxy)
+];
+```
+
+---
+
+## Licentie
+
+MIT — © 2026 [TS-Media](https://groteverbouwing.nl)
