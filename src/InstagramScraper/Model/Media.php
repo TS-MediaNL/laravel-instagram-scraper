@@ -642,6 +642,9 @@ class Media extends AbstractModel
                 $this->imageThumbnailUrl = $value;
                 break;
             case 'carousel_media':
+                if (empty($value)) {
+                    break;
+                }
                 $this->type = self::TYPE_CAROUSEL;
                 $this->carouselMedia = [];
                 foreach ($arr["carousel_media"] as $carouselArray) {

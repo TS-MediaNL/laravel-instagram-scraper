@@ -410,8 +410,21 @@ class Instagram
         }
 
         $lsd = '';
-        if (preg_match('/"LSD",\[\],\{"token":"([^"]+)"\}/', $response->raw_body, $m)) {
+        // Instagram embeds the LSD token in several formats across different page versions.
+        if (preg_match('/"LSD"\s*,\s*\[\s*\]\s*,\s*\{\s*"token"\s*:\s*"([^"]+)"/', $response->raw_body, $m)
+            || preg_match('/"LSD"\s*:\s*\{\s*"token"\s*:\s*"([^"]+)"/', $response->raw_body, $m)
+            || preg_match('/\["LSD","token","([^"]+)"\]/', $response->raw_body, $m)
+            || preg_match('/"lsd"\s*:\s*"([^"]+)"/', $response->raw_body, $m)
+        ) {
             $lsd = $m[1];
+        }
+
+        if ($lsd === '' && $response->code !== static::HTTP_OK) {
+            throw new InstagramException(
+                'Kon de Instagram-homepage niet ophalen voor het LSD-token (HTTP ' . $response->code . '). '
+                . 'Controleer de proxy/timeout instellingen.',
+                $response->code,
+            );
         }
 
         $result = [$lsd, $csrf];

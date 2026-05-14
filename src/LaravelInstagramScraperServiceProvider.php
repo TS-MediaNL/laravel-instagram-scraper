@@ -29,8 +29,7 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
 
             $pending = $app->make(HttpFactory::class)
                 ->timeout((float) ($httpConfig['timeout'] ?? 60))
-                ->connectTimeout((float) ($httpConfig['connect_timeout'] ?? 15))
-                ->withoutRedirecting();
+                ->connectTimeout((float) ($httpConfig['connect_timeout'] ?? 15));
 
             if ($proxy) {
                 $pending = $pending->withOptions(['proxy' => $proxy]);
