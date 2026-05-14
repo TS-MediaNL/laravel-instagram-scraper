@@ -2264,7 +2264,7 @@ class Instagram
      * @throws InstagramChallengeRecaptchaException
      * @throws InstagramChallengeSubmitPhoneNumberException
      */
-    private function verifyTwoStep($response, $cookies, TwoStepVerificationInterface $twoStepVerificator = null)
+    private function verifyTwoStep($response, $cookies, ?TwoStepVerificationInterface $twoStepVerificator = null)
     {
         $new_cookies = $this->parseCookies($response->headers);
         $cookies = array_merge($cookies, $new_cookies);
