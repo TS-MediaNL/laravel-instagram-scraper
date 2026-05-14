@@ -901,6 +901,10 @@ class Instagram
      * Haal posts op via de geauthenticeerde /api/v1/feed/user/ endpoint.
      * Ondersteunt paginering zodat meer dan 12 posts opgehaald kunnen worden.
      *
+     * Probeert achtereenvolgens:
+     *  1. www.instagram.com/api/v1/feed/user/{id}/ (web-sessie cookies)
+     *  2. Fallback naar web_profile_info als de feed onverwachts leeg is
+     *
      * @return list<Media>
      * @throws InstagramNotFoundException
      * @throws InstagramException
@@ -917,7 +921,7 @@ class Instagram
             }
 
             $response = Request::get(
-                'https://i.instagram.com/api/v1/feed/user/' . $userId . '/',
+                Endpoints::BASE_URL . '/api/v1/feed/user/' . $userId . '/',
                 $this->generateHeaders($this->userSession),
                 $params,
             );
@@ -935,7 +939,19 @@ class Instagram
             }
 
             $arr   = $this->decodeRawBodyToJson($response->raw_body);
-            $items = $arr['items'] ?? [];
+            $items = $arr['items'] ?? null;
+
+            // Sommige accounts retourneren feed_items i.p.v. items.
+            if (! is_array($items)) {
+                $items = $arr['feed_items'] ?? null;
+            }
+
+            // Feed endpoint werkte niet — val terug op web_profile_info.
+            if (! is_array($items)) {
+                $username = $this->resolveUsernameById($userId);
+
+                return $this->getMediasByUsername($username, $count);
+            }
 
             if (empty($items)) {
                 break;
@@ -948,7 +964,7 @@ class Instagram
                 $medias[] = Media::create($item);
             }
 
-            $maxId = $arr['next_max_id'] ?? '';
+            $maxId = (string) ($arr['next_max_id'] ?? '');
 
             if ($maxId === '') {
                 break;
