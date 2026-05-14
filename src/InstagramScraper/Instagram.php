@@ -877,9 +877,9 @@ class Instagram
     }
 
     /**
-     * @param int $id
-     * @param int $count
-     * @param string $maxId
+     * @param int    $id
+     * @param int    $count
+     * @param string $maxId  Cursor voor paginering (optioneel).
      *
      * @return Media[]
      * @throws InstagramException
@@ -887,10 +887,75 @@ class Instagram
      */
     public function getMediasByUserId($id, $count = 12, $maxId = '')
     {
-        // Probeer de username te resolven via de v1 user-info endpoint.
+        if ($this->isLoggedIn()) {
+            return $this->getAuthenticatedFeedByUserId((int) $id, $count, (string) $maxId);
+        }
+
+        // Anoniem: resolve username en haal eerste batch op via web_profile_info.
         $username = $this->resolveUsernameById((int) $id);
 
         return $this->getMediasByUsername($username, $count);
+    }
+
+    /**
+     * Haal posts op via de geauthenticeerde /api/v1/feed/user/ endpoint.
+     * Ondersteunt paginering zodat meer dan 12 posts opgehaald kunnen worden.
+     *
+     * @return list<Media>
+     * @throws InstagramNotFoundException
+     * @throws InstagramException
+     */
+    private function getAuthenticatedFeedByUserId(int $userId, int $count = 12, string $maxId = ''): array
+    {
+        $medias = [];
+
+        while (count($medias) < $count) {
+            $params = ['count' => min(30, $count - count($medias))];
+
+            if ($maxId !== '') {
+                $params['max_id'] = $maxId;
+            }
+
+            $response = Request::get(
+                'https://i.instagram.com/api/v1/feed/user/' . $userId . '/',
+                $this->generateHeaders($this->userSession),
+                $params,
+            );
+
+            if (static::HTTP_NOT_FOUND === $response->code) {
+                throw new InstagramNotFoundException('Account with given id does not exist.');
+            }
+            if (static::HTTP_OK !== $response->code) {
+                throw new InstagramException(
+                    'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
+                    . 'Something went wrong. Please report issue.',
+                    $response->code,
+                    static::getErrorBody($response->body),
+                );
+            }
+
+            $arr   = $this->decodeRawBodyToJson($response->raw_body);
+            $items = $arr['items'] ?? [];
+
+            if (empty($items)) {
+                break;
+            }
+
+            foreach ($items as $item) {
+                if (count($medias) >= $count) {
+                    break;
+                }
+                $medias[] = Media::create($item);
+            }
+
+            $maxId = $arr['next_max_id'] ?? '';
+
+            if ($maxId === '') {
+                break;
+            }
+        }
+
+        return $medias;
     }
 
     /**

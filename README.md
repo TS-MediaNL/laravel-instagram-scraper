@@ -52,7 +52,74 @@ INSTAGRAM_SCRAPER_USER_AGENT=
 
 # Optioneel: HTTP proxy
 INSTAGRAM_SCRAPER_PROXY=http://user:pass@proxy.example.com:8080
+
+# Optioneel: authenticatie (zie sectie hieronder)
+INSTAGRAM_SCRAPER_SESSION_ID=
+INSTAGRAM_SCRAPER_USERNAME=
+INSTAGRAM_SCRAPER_PASSWORD=
 ```
+
+---
+
+## Authenticatie (optioneel maar aanbevolen)
+
+Zonder authenticatie werkt de package publiek via de `web_profile_info` endpoint. Dit geeft:
+- Profiel-informatie (volgers, bio, etc.)
+- Maximaal ~12 recentste grid-posts
+
+Met een ingelogde sessie zijn ook beschikbaar:
+- Meer dan 12 posts (paginering)
+- Reels en trial reels
+- Privé-profielen (als je ze volgt)
+
+### Methode 1 — Session ID (aanbevolen)
+
+Dit is de stabielste aanpak: geen wachtwoord in je `.env`, werkt met 2FA-accounts en is moeilijker te detecteren door Instagram.
+
+**Hoe haal je de session ID op:**
+
+1. Open [instagram.com](https://www.instagram.com) in je browser en log in
+2. Open DevTools (`F12`) → **Application** → **Cookies** → `https://www.instagram.com`
+3. Zoek de cookie met de naam **`sessionid`**
+4. Kopieer de waarde en zet hem in je `.env`:
+
+```dotenv
+INSTAGRAM_SCRAPER_SESSION_ID=54524509719%3AaBcDeFgHiJkLmN%3A12%3AAbCdEfGhIjKlMnOpQrStUvWxYz
+```
+
+De sessie is geldig totdat je uitlogt of na ±90 dagen. Gebruik een apart scraper-account, niet je persoonlijke account.
+
+### Methode 2 — Username + Password
+
+De package logt automatisch in bij de eerste request en cachet de sessie.
+
+```dotenv
+INSTAGRAM_SCRAPER_USERNAME=mijn_scraper_account
+INSTAGRAM_SCRAPER_PASSWORD=mijn_wachtwoord
+```
+
+> **Let op**: Werkt niet bij accounts met twee-factor-authenticatie (2FA). Instagram kan inlogpogingen ook blokkeren bij verdacht gebruik.
+
+### Handmatig inloggen (runtime)
+
+Je kunt ook buiten de config om inloggen, bijvoorbeeld als je meerdere accounts wilt rouleren:
+
+```php
+use TsMedia\LaravelInstagramScraper\Facades\InstagramProfile;
+
+// Met session ID
+InstagramProfile::loginWithSessionId('jouw_session_id');
+
+// Of met username + password
+InstagramProfile::login();
+
+// Check of je ingelogd bent
+if (InstagramProfile::isLoggedIn()) {
+    // ...
+}
+```
+
+---
 
 ### Retry-gedrag
 

@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace TsMedia\LaravelInstagramScraper;
 
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramAuthException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramNotFoundException;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Instagram;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Account;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Comment;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Highlight;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Location;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Media;
-use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramNotFoundException;
-use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramException;
 
 /**
  * Aanbevolen entrypoint in Laravel. Biedt de meestgebruikte scraper-operaties
@@ -31,6 +32,42 @@ final class InstagramProfileClient
     public function engine(): Instagram
     {
         return $this->instagram;
+    }
+
+    /**
+     * Geeft aan of er een actieve ingelogde sessie is.
+     */
+    public function isLoggedIn(): bool
+    {
+        return $this->instagram->isLoggedIn();
+    }
+
+    /**
+     * Log in met een session ID (aanbevolen voor productie).
+     *
+     * Haal de "sessionid" cookie op uit je browser nadat je op instagram.com
+     * bent ingelogd: DevTools → Application → Cookies → instagram.com.
+     * De sessie is geldig totdat je uitlogt of na ±90 dagen.
+     *
+     * @throws InstagramAuthException Als de sessie ongeldig is.
+     */
+    public function loginWithSessionId(string $sessionId): void
+    {
+        $this->instagram->loginWithSessionId($sessionId);
+    }
+
+    /**
+     * Log in met gebruikersnaam en wachtwoord.
+     *
+     * De sessie wordt gecachet zodat niet bij elke request opnieuw ingelogd
+     * wordt. Gebruik $force = true om een nieuwe sessie te forceren.
+     *
+     * @throws InstagramAuthException Als de inloggegevens onjuist zijn.
+     * @throws InstagramException
+     */
+    public function login(bool $force = false): void
+    {
+        $this->instagram->login($force);
     }
 
     /**
@@ -70,17 +107,23 @@ final class InstagramProfileClient
     }
 
     /**
-     * Haal de posts op direct via een Account-object (meest efficiënt — geen extra lookup).
+     * Haal de posts op direct via een Account-object.
+     *
+     * Met een actieve sessie (INSTAGRAM_SCRAPER_SESSION_ID of username+password)
+     * worden posts opgehaald via de geauthenticeerde feed endpoint met paginering,
+     * zodat meer dan 12 posts beschikbaar zijn (reels, trial reels, etc.).
+     * Zonder sessie valt het terug op web_profile_info (max ~12 posts).
+     *
      * Aanbevolen flow:
      *   $account = $client->accountByUsername('nasa');
-     *   $posts   = $client->timelineByAccount($account);
+     *   $posts   = $client->timelineByAccount($account, 48);
      *
      * @return list<Media>
      * @throws InstagramException
      */
     public function timelineByAccount(Account $account, int $count = 24): array
     {
-        return $this->instagram->getMediasByUsername($account->getUsername(), $count);
+        return $this->instagram->getMediasByUserId((int) $account->getId(), $count);
     }
 
     /**

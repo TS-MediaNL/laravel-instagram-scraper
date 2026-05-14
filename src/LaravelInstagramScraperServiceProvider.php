@@ -6,6 +6,7 @@ namespace TsMedia\LaravelInstagramScraper;
 
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
+use Psr\SimpleCache\CacheInterface;
 use TsMedia\LaravelInstagramScraper\Console\TestInstagramScraperCommand;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Http\LaravelHttpClientAdapter;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Instagram;
@@ -24,6 +25,8 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
             $httpConfig  = $app['config']->get('instagram-scraper.http', []);
             /** @var array<string, mixed> $retryConfig */
             $retryConfig = $app['config']->get('instagram-scraper.retry', []);
+            /** @var array<string, mixed> $authConfig */
+            $authConfig  = $app['config']->get('instagram-scraper.auth', []);
             $proxy       = $app['config']->get('instagram-scraper.proxy');
             $userAgent   = $app['config']->get('instagram-scraper.user_agent');
 
@@ -42,7 +45,23 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
                 retryOnCodes: (array) ($retryConfig['on_codes'] ?? [429, 500, 502, 503, 504]),
             );
 
-            $instagram = new Instagram($adapter);
+            $cache    = $app->make(CacheInterface::class);
+            $sessionId = $authConfig['session_id'] ?? null;
+            $username  = $authConfig['username'] ?? null;
+            $password  = $authConfig['password'] ?? null;
+
+            if ($sessionId) {
+                // Session ID — meest stabiel voor productie.
+                $instagram = Instagram::withUsername($adapter, 'session', $cache);
+                $instagram->loginWithSessionId($sessionId);
+            } elseif ($username && $password) {
+                // Username + wachtwoord — sessie wordt gecachet.
+                $instagram = Instagram::withCredentials($adapter, $username, $password, $cache);
+                $instagram->login();
+            } else {
+                // Anoniem — werkt alleen voor publieke profielen, max ±12 posts.
+                $instagram = Instagram::withCredentials($adapter, '', '', $cache);
+            }
 
             if ($userAgent) {
                 $instagram->setUserAgent($userAgent);

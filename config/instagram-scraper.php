@@ -59,4 +59,34 @@ return [
     */
     'proxy' => env('INSTAGRAM_SCRAPER_PROXY'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Instagram authenticatie (optioneel)
+    |--------------------------------------------------------------------------
+    |
+    | Zonder authenticatie werkt de scraper publiek, maar is beperkt tot
+    | ±12 posts per profiel via de web_profile_info endpoint. Met een
+    | ingelogde sessie zijn meer posts, reels, trial reels en privé-profielen
+    | bereikbaar.
+    |
+    | AANBEVOLEN — session_id:
+    |   Haal de "sessionid" cookie op uit je browser nadat je op
+    |   instagram.com bent ingelogd (DevTools → Application → Cookies).
+    |   Zet hem in INSTAGRAM_SCRAPER_SESSION_ID. Geen wachtwoord nodig.
+    |   Geldig totdat je uitlogt of het verlopen is (±90 dagen).
+    |
+    | ALTERNATIEF — username + password:
+    |   De package logt automatisch in en slaat de sessie op in de
+    |   Laravel cache. Werkt mogelijk niet bij 2FA-accounts of als
+    |   Instagram de inlog blokkeert.
+    |
+    | Laat alle drie leeg om anoniem te scrapen.
+    |
+    */
+    'auth' => [
+        'session_id' => env('INSTAGRAM_SCRAPER_SESSION_ID'),
+        'username'   => env('INSTAGRAM_SCRAPER_USERNAME'),
+        'password'   => env('INSTAGRAM_SCRAPER_PASSWORD'),
+    ],
+
 ];
