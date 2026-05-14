@@ -329,7 +329,15 @@ class Instagram
      */
     private function generateHeaders($session, $gisToken = null)
     {
-        $headers = [];
+        $headers = [
+            'accept'            => '*/*',
+            'accept-language'   => 'en-US,en;q=0.9',
+            'referer'           => Endpoints::BASE_URL . '/',
+            'x-ig-app-id'       => static::X_IG_APP_ID,
+            'x-asbd-id'         => '198387',
+            'x-requested-with'  => 'XMLHttpRequest',
+        ];
+
         if ($session) {
             $cookies = '';
             foreach ($session as $key => $value) {
@@ -338,12 +346,8 @@ class Instagram
 
             $csrf = empty($session['csrftoken']) ? $session['x-csrftoken'] : $session['csrftoken'];
 
-            $headers = [
-                'cookie' => $cookies,
-                'referer' => Endpoints::BASE_URL . '/',
-                'x-csrftoken' => $csrf,
-            ];
-
+            $headers['cookie']      = $cookies;
+            $headers['x-csrftoken'] = $csrf;
         }
 
         if ($this->getUserAgent()) {
@@ -355,7 +359,7 @@ class Instagram
         }
 
         if (empty($headers['x-csrftoken'])) {
-            $headers['x-csrftoken'] = md5(uniqid()); // this can be whatever, insta doesn't like an empty value
+            $headers['x-csrftoken'] = md5(uniqid());
         }
 
         return $headers;

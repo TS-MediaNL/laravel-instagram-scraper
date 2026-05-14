@@ -61,6 +61,35 @@ Standaard wordt opnieuw geprobeerd bij statuscodes: `429`, `500`, `502`, `503`, 
 
 ---
 
+## Package testen (smoke / live)
+
+In de **root van deze repository** (na `composer install`):
+
+```bash
+# Alleen unit-tests (geen live Instagram)
+composer test
+
+# Live smoke-test (HTTP naar instagram.com; kan skippen bij 400/429 enz.)
+composer test:network
+```
+
+Of met een andere publieke gebruikersnaam:
+
+```bash
+php scripts/smoke-test.php nasa
+```
+
+De variabele `INSTAGRAM_SMOKE_USERNAME` (via tweede argument in `smoke-test.php`) bepaalt welk account wordt opgevraagd; standaard is `instagram`.
+
+### In een Laravel-app (na `composer require`)
+
+```bash
+php artisan instagram-scraper:test
+php artisan instagram-scraper:test --username=nasa --timeline
+```
+
+---
+
 ## Gebruik
 
 ### Via de `InstagramProfile` facade

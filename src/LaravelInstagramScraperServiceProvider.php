@@ -6,6 +6,7 @@ namespace TsMedia\LaravelInstagramScraper;
 
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
+use TsMedia\LaravelInstagramScraper\Console\TestInstagramScraperCommand;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Http\LaravelHttpClientAdapter;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Instagram;
 
@@ -61,6 +62,10 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
+            $this->commands([
+                TestInstagramScraperCommand::class,
+            ]);
+
             $this->publishes([
                 dirname(__DIR__) . '/config/instagram-scraper.php' => config_path('instagram-scraper.php'),
             ], 'instagram-scraper-config');

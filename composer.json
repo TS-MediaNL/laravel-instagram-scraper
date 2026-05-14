@@ -23,6 +23,7 @@
         "guzzlehttp/guzzle": "^7.8",
         "guzzlehttp/psr7": "^2.7",
         "illuminate/contracts": "^11.0|^12.0|^13.0|^14.0|^15.0",
+        "illuminate/console": "^11.0|^12.0|^13.0|^14.0|^15.0",
         "illuminate/support": "^11.0|^12.0|^13.0|^14.0|^15.0",
         "psr/http-client": "^1.0.1",
         "psr/http-factory": "^1.0.2",
@@ -56,5 +57,16 @@
         "sort-packages": true
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "scripts": {
+        "test": "phpunit",
+        "test:network": [
+            "@putenv RUN_INSTAGRAM_NETWORK_TEST=1",
+            "phpunit tests/Feature/PackageNetworkSmokeTest.php"
+        ]
+    },
+    "scripts-descriptions": {
+        "test": "PHPUnit (unit + feature, zonder live Instagram)",
+        "test:network": "Live smoke-test tegen instagram.com (publiek account, standaard: instagram)"
+    }
 }
