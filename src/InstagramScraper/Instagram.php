@@ -986,6 +986,88 @@ class Instagram
     }
 
     /**
+     * Haal alle reels van een gebruiker op via de Reels-tab endpoint.
+     *
+     * Bevat alle gepubliceerde reels inclusief trial reels. Vereist een actieve sessie
+     * (INSTAGRAM_SCRAPER_SESSION_ID of username + password in config).
+     *
+     * @return list<Media>
+     * @throws InstagramAuthException  Als er geen sessie actief is.
+     * @throws InstagramNotFoundException
+     * @throws InstagramException
+     */
+    public function getReelsByUserId(int $userId, int $count = 33, string $maxId = ''): array
+    {
+        if (! $this->hasActiveSession()) {
+            throw new InstagramAuthException(
+                'getReelsByUserId() vereist een actieve sessie. '
+                . 'Stel INSTAGRAM_SCRAPER_SESSION_ID in of gebruik username + password.',
+            );
+        }
+
+        $medias = [];
+
+        while (count($medias) < $count) {
+            $body = [
+                'target_user_id' => (string) $userId,
+                'page_size'      => (string) min(33, $count - count($medias)),
+            ];
+
+            if ($maxId !== '') {
+                $body['max_id'] = $maxId;
+            }
+
+            $headers              = $this->generateHeaders($this->userSession);
+            $headers['origin']    = Endpoints::BASE_URL;
+            $headers['referer']   = Endpoints::BASE_URL . '/' . $userId . '/reels/';
+
+            $response = Request::post(
+                Endpoints::USER_CLIPS,
+                $headers,
+                $body,
+            );
+
+            if (static::HTTP_NOT_FOUND === $response->code) {
+                throw new InstagramNotFoundException('Account with given id does not exist.');
+            }
+            if (static::HTTP_OK !== $response->code) {
+                throw new InstagramException(
+                    'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
+                    . 'Something went wrong. Please report issue.',
+                    $response->code,
+                    static::getErrorBody($response->body),
+                );
+            }
+
+            $arr   = $this->decodeRawBodyToJson($response->raw_body);
+            $items = $arr['items'] ?? [];
+
+            if (empty($items)) {
+                break;
+            }
+
+            foreach ($items as $item) {
+                if (count($medias) >= $count) {
+                    break;
+                }
+                // Clips-items bevatten de media onder de 'media' sleutel.
+                $node     = $item['media'] ?? $item;
+                $medias[] = Media::create($node);
+            }
+
+            $pagingInfo      = $arr['paging_info'] ?? [];
+            $moreAvailable   = (bool) ($pagingInfo['more_available'] ?? false);
+            $maxId           = (string) ($pagingInfo['max_id'] ?? '');
+
+            if (! $moreAvailable || $maxId === '') {
+                break;
+            }
+        }
+
+        return $medias;
+    }
+
+    /**
      * Zoek de username op bij een numeriek user-ID via de web v1 user-info endpoint.
      *
      * @throws InstagramNotFoundException

@@ -58,6 +58,13 @@ class Endpoints
      */
     const USER_INFO_BY_ID_V1 = 'https://www.instagram.com/api/v1/users/{userId}/info/';
 
+    /**
+     * Reels-tab van een gebruiker (POST, vereist authenticatie).
+     * Body: target_user_id, page_size, max_id.
+     * Bevat alle reels inclusief trial reels.
+     */
+    const USER_CLIPS = 'https://www.instagram.com/api/v1/clips/user/';
+
     private static int $requestMediaCount = 30;
 
     public static function setAccountMediasRequestCount(int $count): void

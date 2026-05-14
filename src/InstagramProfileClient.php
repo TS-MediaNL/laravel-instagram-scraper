@@ -202,4 +202,35 @@ final class InstagramProfileClient
     {
         return $this->instagram->getMediasByLocationId($locationId, $count);
     }
+
+    /**
+     * Haal alle reels op van een gebruiker via de Reels-tab.
+     *
+     * Bevat alle gepubliceerde reels inclusief trial reels. Vereist een actieve sessie
+     * (INSTAGRAM_SCRAPER_SESSION_ID of username + password in de config).
+     *
+     * Voorbeeld:
+     *   $reels = InstagramProfile::reelsByUserId(54524509719, 50);
+     *
+     * @return list<Media>
+     * @throws InstagramAuthException  Als er geen sessie actief is.
+     * @throws InstagramNotFoundException
+     * @throws InstagramException
+     */
+    public function reelsByUserId(int $userId, int $count = 33): array
+    {
+        return $this->instagram->getReelsByUserId($userId, $count);
+    }
+
+    /**
+     * Haal alle reels op van een gebruiker via een Account-object.
+     *
+     * @return list<Media>
+     * @throws InstagramAuthException
+     * @throws InstagramException
+     */
+    public function reelsByAccount(Account $account, int $count = 33): array
+    {
+        return $this->instagram->getReelsByUserId((int) $account->getId(), $count);
+    }
 }
