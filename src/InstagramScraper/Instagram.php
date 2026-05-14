@@ -33,11 +33,12 @@ use stdClass;
 
 class Instagram
 {
-    const HTTP_NOT_FOUND = 404;
-    const HTTP_OK = 200;
-    const HTTP_FOUND = 302;
-    const HTTP_FORBIDDEN = 403;
-    const HTTP_BAD_REQUEST = 400;
+    const HTTP_NOT_FOUND    = 404;
+    const HTTP_OK           = 200;
+    const HTTP_FOUND        = 302;
+    const HTTP_FORBIDDEN    = 403;
+    const HTTP_BAD_REQUEST  = 400;
+    const HTTP_UNAUTHORIZED = 401;
 
     const MAX_COMMENTS_PER_REQUEST = 300;
     const MAX_LIKES_PER_REQUEST = 300;
@@ -375,16 +376,19 @@ class Instagram
     }
 
     /**
-     * Haal het LSD-token en CSRF-token op door de Instagram-homepage te bezoeken.
+     * Haal het LSD-token, CSRF-token én homepage-cookies op.
+     * Deze drie samen zijn nodig voor de GraphQL POST.
+     *
      * De resultaten worden tot 30 minuten gecachet via PSR-16 als $instanceCache beschikbaar is.
      *
-     * @return array{0: string, 1: string}  [lsd, csrf]
+     * @return array{0: string, 1: string, 2: string}  [lsd, csrf, cookieString]
+     * @throws InstagramException
      */
     private function fetchLsdAndCsrf(): array
     {
         if (static::$instanceCache !== null) {
             $cached = static::$instanceCache->get(static::GRAPHQL_CACHE_KEY);
-            if (is_array($cached) && ! empty($cached[0])) {
+            if (is_array($cached) && count($cached) >= 3 && ! empty($cached[0])) {
                 return $cached;
             }
         }
@@ -392,16 +396,34 @@ class Instagram
         $response = Request::get(
             Endpoints::BASE_URL . '/',
             [
-                'accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'accept'          => 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                 'accept-language' => 'en-US,en;q=0.9',
+                'accept-encoding' => 'gzip, deflate, br',
+                'sec-fetch-dest'  => 'document',
+                'sec-fetch-mode'  => 'navigate',
+                'sec-fetch-site'  => 'none',
+                'upgrade-insecure-requests' => '1',
                 'user-agent'      => $this->getUserAgent(),
             ],
         );
 
-        $csrf = '';
+        if ($response->code !== static::HTTP_OK) {
+            throw new InstagramException(
+                'Kon de Instagram-homepage niet ophalen voor het LSD-token (HTTP ' . $response->code . ').',
+                $response->code,
+            );
+        }
+
+        // Verzamel alle Set-Cookie waarden zodat we ze kunnen meesturen naar GraphQL.
+        $cookieParts = [];
+        $csrf        = '';
+
         foreach ($response->headers as $name => $values) {
             if (strtolower($name) === 'set-cookie') {
                 foreach ((array) $values as $cookie) {
+                    $nameValue = explode(';', $cookie)[0];
+                    $cookieParts[] = trim($nameValue);
+
                     if (preg_match('/\bcsrftoken=([^;,\s]+)/i', $cookie, $m)) {
                         $csrf = $m[1];
                     }
@@ -409,25 +431,24 @@ class Instagram
             }
         }
 
+        $cookieString = implode('; ', $cookieParts);
+
+        // Probeer het LSD-token te extraheren via meerdere patronen.
         $lsd = '';
-        // Instagram embeds the LSD token in several formats across different page versions.
-        if (preg_match('/"LSD"\s*,\s*\[\s*\]\s*,\s*\{\s*"token"\s*:\s*"([^"]+)"/', $response->raw_body, $m)
-            || preg_match('/"LSD"\s*:\s*\{\s*"token"\s*:\s*"([^"]+)"/', $response->raw_body, $m)
-            || preg_match('/\["LSD","token","([^"]+)"\]/', $response->raw_body, $m)
-            || preg_match('/"lsd"\s*:\s*"([^"]+)"/', $response->raw_body, $m)
-        ) {
-            $lsd = $m[1];
+        foreach ([
+            '/"LSD"\s*,\s*\[\s*\]\s*,\s*\{\s*"token"\s*:\s*"([^"]+)"/',
+            '/"LSD"\s*:\s*\{\s*"token"\s*:\s*"([^"]+)"/',
+            '/\["LSD","token","([^"]+)"\]/',
+            '/"lsd"\s*:\s*"([^"]{6,})"/',
+            '/DTSGInitialData[^"]*"token"\s*:\s*"([^"]+)"/',
+        ] as $pattern) {
+            if (preg_match($pattern, $response->raw_body, $m)) {
+                $lsd = $m[1];
+                break;
+            }
         }
 
-        if ($lsd === '' && $response->code !== static::HTTP_OK) {
-            throw new InstagramException(
-                'Kon de Instagram-homepage niet ophalen voor het LSD-token (HTTP ' . $response->code . '). '
-                . 'Controleer de proxy/timeout instellingen.',
-                $response->code,
-            );
-        }
-
-        $result = [$lsd, $csrf];
+        $result = [$lsd, $csrf, $cookieString];
 
         if (static::$instanceCache !== null && $lsd !== '') {
             static::$instanceCache->set(static::GRAPHQL_CACHE_KEY, $result, 1800);
@@ -446,7 +467,15 @@ class Instagram
      */
     public function getMediasByUsername(string $username, int $count = 12): array
     {
-        [$lsd, $csrf] = $this->fetchLsdAndCsrf();
+        [$lsd, $csrf, $cookieString] = $this->fetchLsdAndCsrf();
+
+        if ($lsd === '') {
+            throw new InstagramException(
+                'Kon het LSD-token niet extraheren van de Instagram-homepage. '
+                . 'Instagram serveert mogelijk andere HTML (consent-pagina of bot-detectie). '
+                . 'Probeer cookies/proxy in te stellen of controleer of instagram.com bereikbaar is.',
+            );
+        }
 
         $variables = json_encode([
             'data' => [
@@ -485,6 +514,12 @@ class Instagram
             $headers['x-csrftoken'] = $csrf;
         }
 
+        // Stuur de cookies van de homepage mee — Instagram verwacht dat een browser
+        // eerder de homepage bezocht heeft en de cookies opgeslagen heeft.
+        if ($cookieString !== '') {
+            $headers['cookie'] = $cookieString;
+        }
+
         $response = Request::post(
             'https://www.instagram.com/graphql/query',
             $headers,
@@ -495,6 +530,11 @@ class Instagram
             throw new InstagramNotFoundException('Account with given username does not exist.');
         }
         if (static::HTTP_OK !== $response->code) {
+            // Bij een 401 kunnen LSD/cookies verlopen zijn; cache wissen voor volgende poging.
+            if ($response->code === static::HTTP_UNAUTHORIZED && static::$instanceCache !== null) {
+                static::$instanceCache->delete(static::GRAPHQL_CACHE_KEY);
+            }
+
             throw new InstagramException(
                 'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
                 . 'Something went wrong. Please report issue.',
@@ -507,7 +547,7 @@ class Instagram
         $edges = $arr['data']['xdt_api__v1__feed__user_timeline_graphql_connection']['edges'] ?? null;
 
         if (! is_array($edges)) {
-            // LSD-token mogelijk verlopen — cache verwijderen zodat volgende request vers ophaalt
+            // Onverwachte structuur — cache wissen zodat volgende request vers LSD+cookies ophaalt.
             if (static::$instanceCache !== null) {
                 static::$instanceCache->delete(static::GRAPHQL_CACHE_KEY);
             }
