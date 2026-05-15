@@ -19,6 +19,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Vertraging tussen requests (anti-detectie)
+    |--------------------------------------------------------------------------
+    |
+    | Een willekeurige pauze tussen opeenvolgende pagineringsrequests voorkomt
+    | dat het verkeerspatroon op geautomatiseerd gedrag lijkt. De wachttijd
+    | wordt willekeurig gekozen tussen min_ms en max_ms.
+    |
+    | Alleen van toepassing op paginering (meerdere requests voor hetzelfde
+    | account). Enkelvoudige opzoekingen worden niet vertraagd.
+    |
+    | Aanbevolen waarden:
+    |   Laag profiel  : min=1000, max=3000
+    |   Normaal       : min=500,  max=2000  (standaard)
+    |   Snel (risico) : min=200,  max=800
+    |
+    */
+    'request_delay' => [
+        'min_ms' => (int) env('INSTAGRAM_SCRAPER_DELAY_MIN_MS', 500),
+        'max_ms' => (int) env('INSTAGRAM_SCRAPER_DELAY_MAX_MS', 2000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Automatisch opnieuw proberen bij fouten
     |--------------------------------------------------------------------------
     |

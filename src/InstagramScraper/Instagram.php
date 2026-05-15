@@ -340,12 +340,20 @@ class Instagram
     private function generateHeaders($session, $gisToken = null)
     {
         $headers = [
-            'accept'            => '*/*',
-            'accept-language'   => 'en-US,en;q=0.9',
-            'referer'           => Endpoints::BASE_URL . '/',
-            'x-ig-app-id'       => static::X_IG_APP_ID,
-            'x-asbd-id'         => '198387',
-            'x-requested-with'  => 'XMLHttpRequest',
+            'accept'             => '*/*',
+            'accept-language'    => 'en-US,en;q=0.9',
+            'accept-encoding'    => 'gzip, deflate, br',
+            'referer'            => Endpoints::BASE_URL . '/',
+            'x-ig-app-id'        => static::X_IG_APP_ID,
+            'x-asbd-id'          => '198387',
+            'x-requested-with'   => 'XMLHttpRequest',
+            // Sec-Fetch headers worden door elke echte browser meegestuurd voor XHR/fetch requests.
+            'sec-fetch-dest'     => 'empty',
+            'sec-fetch-mode'     => 'cors',
+            'sec-fetch-site'     => 'same-origin',
+            'sec-ch-ua'          => '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+            'sec-ch-ua-mobile'   => '?0',
+            'sec-ch-ua-platform' => '"Windows"',
         ];
 
         if ($session) {
@@ -909,6 +917,32 @@ class Instagram
     }
 
     /**
+     * Stel de vertraging in tussen opeenvolgende pagineringsrequests.
+     * Gebruik dit vanuit de ServiceProvider op basis van de config-waarden.
+     */
+    public function setRequestDelay(int $minMs, int $maxMs): void
+    {
+        $this->pagingDelayMinimumMicrosec = max(0, $minMs) * 1_000;
+        $this->pagingDelayMaximumMicrosec = max($minMs, $maxMs) * 1_000;
+    }
+
+    /**
+     * Slaap een willekeurig aantal microseconden tussen pagingDelayMinimumMicrosec
+     * en pagingDelayMaximumMicrosec. Simuleert menselijk browsegedrag.
+     */
+    private function randomDelay(): void
+    {
+        if ($this->pagingDelayMaximumMicrosec <= 0) {
+            return;
+        }
+
+        $min = (int) $this->pagingDelayMinimumMicrosec;
+        $max = (int) $this->pagingDelayMaximumMicrosec;
+
+        usleep(random_int($min, $max));
+    }
+
+    /**
      * Haal posts op via de geauthenticeerde /api/v1/feed/user/ endpoint.
      * Ondersteunt paginering zodat meer dan 12 posts opgehaald kunnen worden.
      *
@@ -922,9 +956,15 @@ class Instagram
      */
     private function getAuthenticatedFeedByUserId(int $userId, int $count = 12, string $maxId = ''): array
     {
-        $medias = [];
+        $medias    = [];
+        $pageIndex = 0;
 
         while (count($medias) < $count) {
+            if ($pageIndex > 0) {
+                $this->randomDelay();
+            }
+            $pageIndex++;
+
             $params = ['count' => min(30, $count - count($medias))];
 
             if ($maxId !== '') {
@@ -1005,9 +1045,15 @@ class Instagram
             );
         }
 
-        $medias = [];
+        $medias    = [];
+        $pageIndex = 0;
 
         while (count($medias) < $count) {
+            if ($pageIndex > 0) {
+                $this->randomDelay();
+            }
+            $pageIndex++;
+
             $body = [
                 'target_user_id' => (string) $userId,
                 'page_size'      => (string) min(33, $count - count($medias)),
@@ -1017,9 +1063,9 @@ class Instagram
                 $body['max_id'] = $maxId;
             }
 
-            $headers              = $this->generateHeaders($this->userSession);
-            $headers['origin']    = Endpoints::BASE_URL;
-            $headers['referer']   = Endpoints::BASE_URL . '/' . $userId . '/reels/';
+            $headers            = $this->generateHeaders($this->userSession);
+            $headers['origin']  = Endpoints::BASE_URL;
+            $headers['referer'] = Endpoints::BASE_URL . '/' . $userId . '/reels/';
 
             $response = Request::post(
                 Endpoints::USER_CLIPS,
@@ -1030,7 +1076,21 @@ class Instagram
             if (static::HTTP_NOT_FOUND === $response->code) {
                 throw new InstagramNotFoundException('Account with given id does not exist.');
             }
+
+            // Instagram vereist een security checkpoint — account moet geverifieerd worden.
             if (static::HTTP_OK !== $response->code) {
+                $body = $response->body ?? null;
+
+                if (is_object($body) && isset($body->message) && $body->message === 'checkpoint_required') {
+                    $checkpointUrl = $body->checkpoint_url ?? 'https://www.instagram.com/challenge/';
+                    throw new InstagramAuthException(
+                        'Instagram vereist een security checkpoint voor dit account. '
+                        . 'Ga naar ' . $checkpointUrl . ' en voltooi de verificatie in je browser. '
+                        . 'Haal daarna een nieuwe session ID op en update INSTAGRAM_SCRAPER_SESSION_ID.',
+                        $response->code,
+                    );
+                }
+
                 throw new InstagramException(
                     'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
                     . 'Something went wrong. Please report issue.',
@@ -1055,9 +1115,9 @@ class Instagram
                 $medias[] = Media::create($node);
             }
 
-            $pagingInfo      = $arr['paging_info'] ?? [];
-            $moreAvailable   = (bool) ($pagingInfo['more_available'] ?? false);
-            $maxId           = (string) ($pagingInfo['max_id'] ?? '');
+            $pagingInfo    = $arr['paging_info'] ?? [];
+            $moreAvailable = (bool) ($pagingInfo['more_available'] ?? false);
+            $maxId         = (string) ($pagingInfo['max_id'] ?? '');
 
             if (! $moreAvailable || $maxId === '') {
                 break;

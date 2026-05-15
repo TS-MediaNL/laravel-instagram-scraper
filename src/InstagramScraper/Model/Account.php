@@ -389,7 +389,12 @@ class Account extends AbstractModel
     public function isHasClips()
     {
         return $this->hasClips;
-    }    
+    }
+
+    public function hasClips(): bool
+    {
+        return $this->hasClips;
+    }
 
     /**
      * @return bool

@@ -22,11 +22,13 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
 
         $this->app->singleton(Instagram::class, function ($app): Instagram {
             /** @var array<string, mixed> $httpConfig */
-            $httpConfig  = $app['config']->get('instagram-scraper.http', []);
+            $httpConfig   = $app['config']->get('instagram-scraper.http', []);
             /** @var array<string, mixed> $retryConfig */
-            $retryConfig = $app['config']->get('instagram-scraper.retry', []);
+            $retryConfig  = $app['config']->get('instagram-scraper.retry', []);
             /** @var array<string, mixed> $authConfig */
-            $authConfig  = $app['config']->get('instagram-scraper.auth', []);
+            $authConfig   = $app['config']->get('instagram-scraper.auth', []);
+            /** @var array<string, mixed> $delayConfig */
+            $delayConfig  = $app['config']->get('instagram-scraper.request_delay', []);
             $proxy       = $app['config']->get('instagram-scraper.proxy');
             $userAgent   = $app['config']->get('instagram-scraper.user_agent');
 
@@ -66,6 +68,11 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
             if ($userAgent) {
                 $instagram->setUserAgent($userAgent);
             }
+
+            $instagram->setRequestDelay(
+                (int) ($delayConfig['min_ms'] ?? 500),
+                (int) ($delayConfig['max_ms'] ?? 2000),
+            );
 
             return $instagram;
         });
