@@ -23,13 +23,17 @@ use Psr\Http\Message\ResponseInterface;
 final class LaravelHttpClientAdapter implements ClientInterface
 {
     /**
-     * @param list<int> $retryOnCodes  HTTP-statuscodes die een retry triggeren.
+     * @param list<int> $retryOnCodes      HTTP-statuscodes die een retry triggeren.
+     * @param int       $rateLimitDelayMs  Basisvertraging (ms) bij HTTP 429 — Instagram
+     *                                     vereist typisch 30-60 s rust; veel groter dan
+     *                                     de gewone retry-vertraging voor 5xx fouten.
      */
     public function __construct(
         private readonly PendingRequest $pending,
         private readonly int $maxAttempts = 1,
         private readonly int $retryDelayMs = 1000,
         private readonly array $retryOnCodes = [],
+        private readonly int $rateLimitDelayMs = 60_000,
     ) {}
 
     /**
@@ -46,6 +50,8 @@ final class LaravelHttpClientAdapter implements ClientInterface
                 throw new NetworkException($request, $e->getMessage(), $e);
             }
 
+            $isRateLimit = $response->getStatusCode() === 429;
+
             $shouldRetry = $attempt < $this->maxAttempts - 1
                 && in_array($response->getStatusCode(), $this->retryOnCodes, strict: true);
 
@@ -54,7 +60,10 @@ final class LaravelHttpClientAdapter implements ClientInterface
             }
 
             $attempt++;
-            usleep($this->exponentialDelayMicroseconds($attempt));
+            $delayUs = $isRateLimit
+                ? $this->rateLimitDelayMicroseconds($attempt)
+                : $this->exponentialDelayMicroseconds($attempt);
+            usleep($delayUs);
         }
     }
 
@@ -78,10 +87,20 @@ final class LaravelHttpClientAdapter implements ClientInterface
     }
 
     /**
-     * Exponentiële backoff: 1× delay, 2× delay, 4× delay, …
+     * Exponentiële backoff voor normale fouten (5xx): 1×, 2×, 4× van retryDelayMs.
      */
     private function exponentialDelayMicroseconds(int $attempt): int
     {
         return $this->retryDelayMs * (2 ** ($attempt - 1)) * 1_000;
+    }
+
+    /**
+     * Lineaire backoff voor 429: elke poging wacht rateLimitDelayMs.
+     * Exponentieel is hier minder zinvol — als Instagram rate-limit, is de IP
+     * al geflagd en helpt langer wachten bij de eerste poging het meest.
+     */
+    private function rateLimitDelayMicroseconds(int $attempt): int
+    {
+        return $this->rateLimitDelayMs * $attempt * 1_000;
     }
 }

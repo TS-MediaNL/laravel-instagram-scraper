@@ -11,6 +11,7 @@ use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramChalleng
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramException;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramNotFoundException;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramAgeRestrictedException;
+use TsMedia\LaravelInstagramScraper\InstagramScraper\Exception\InstagramRateLimitException;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Http\Response;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Account;
 use TsMedia\LaravelInstagramScraper\InstagramScraper\Model\Activity;
@@ -33,12 +34,13 @@ use stdClass;
 
 class Instagram
 {
-    const HTTP_NOT_FOUND    = 404;
-    const HTTP_OK           = 200;
-    const HTTP_FOUND        = 302;
-    const HTTP_FORBIDDEN    = 403;
-    const HTTP_BAD_REQUEST  = 400;
-    const HTTP_UNAUTHORIZED = 401;
+    const HTTP_NOT_FOUND        = 404;
+    const HTTP_OK               = 200;
+    const HTTP_FOUND            = 302;
+    const HTTP_FORBIDDEN        = 403;
+    const HTTP_BAD_REQUEST      = 400;
+    const HTTP_UNAUTHORIZED     = 401;
+    const HTTP_TOO_MANY_REQUESTS = 429;
 
     const MAX_COMMENTS_PER_REQUEST = 300;
     const MAX_LIKES_PER_REQUEST = 300;
@@ -159,6 +161,37 @@ class Instagram
             $hashtags[] = Tag::create($jsonHashtag['hashtag']);
         }
         return $hashtags;
+    }
+
+    /**
+     * Gooit een passende exception voor een mislukte response.
+     * Centraliseert 429-detectie zodat niet elke methode het apart hoeft te checken.
+     *
+     * @throws InstagramRateLimitException  bij HTTP 429
+     * @throws InstagramNotFoundException   bij HTTP 404
+     * @throws InstagramException           bij andere foutcodes
+     */
+    private static function throwForResponse(Response $response, string $context = ''): never
+    {
+        $body = static::getErrorBody($response->body);
+
+        if ($response->code === static::HTTP_TOO_MANY_REQUESTS) {
+            throw new InstagramRateLimitException(
+                'Instagram rate limit (429)' . ($context ? " [{$context}]" : '') . ': too many requests from this IP or session. '
+                . 'Wait at least 10-30 minutes before retrying. Use a residential proxy for high-volume scraping.',
+                $body,
+            );
+        }
+
+        if ($response->code === static::HTTP_NOT_FOUND) {
+            throw new InstagramNotFoundException('Account with given username does not exist.');
+        }
+
+        throw new InstagramException(
+            'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '. Something went wrong. Please report issue.',
+            $response->code,
+            $body,
+        );
     }
 
     private static function getErrorBody(mixed $rawError): string
@@ -492,16 +525,8 @@ class Instagram
             $this->generateHeaders($this->userSession),
         );
 
-        if (static::HTTP_NOT_FOUND === $response->code) {
-            throw new InstagramNotFoundException('Account with given username does not exist.');
-        }
         if (static::HTTP_OK !== $response->code) {
-            throw new InstagramException(
-                'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
-                . 'Something went wrong. Please report issue.',
-                $response->code,
-                static::getErrorBody($response->body),
-            );
+            static::throwForResponse($response, 'getMediasByUsername');
         }
 
         $arr  = $this->decodeRawBodyToJson($response->raw_body);
@@ -824,12 +849,8 @@ class Instagram
     {
         $response = Request::get(Endpoints::getAccountPageLink($username), $this->generateHeaders($this->userSession));
 
-        if (static::HTTP_NOT_FOUND === $response->code) {
-            throw new InstagramNotFoundException('Account with given username does not exist.');
-        }
         if (static::HTTP_OK !== $response->code) {
-            throw new InstagramException('Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.' .
-                                         'Something went wrong. Please report issue.', $response->code, static::getErrorBody($response->body));
+            static::throwForResponse($response, 'getAccount');
         }
 
         $userArray = self::extractSharedDataFromBody($response->raw_body);
@@ -977,16 +998,8 @@ class Instagram
                 $params,
             );
 
-            if (static::HTTP_NOT_FOUND === $response->code) {
-                throw new InstagramNotFoundException('Account with given id does not exist.');
-            }
             if (static::HTTP_OK !== $response->code) {
-                throw new InstagramException(
-                    'Response code is ' . $response->code . ': ' . static::httpCodeToString($response->code) . '.'
-                    . 'Something went wrong. Please report issue.',
-                    $response->code,
-                    static::getErrorBody($response->body),
-                );
+                static::throwForResponse($response, 'getAuthenticatedFeedByUserId');
             }
 
             $arr   = $this->decodeRawBodyToJson($response->raw_body);
@@ -1073,16 +1086,17 @@ class Instagram
                 $body,
             );
 
-            if (static::HTTP_NOT_FOUND === $response->code) {
-                throw new InstagramNotFoundException('Account with given id does not exist.');
-            }
-
-            // Instagram vereist een security checkpoint — account moet geverifieerd worden.
             if (static::HTTP_OK !== $response->code) {
-                $body = $response->body ?? null;
+                $responseBody = $response->body ?? null;
 
-                if (is_object($body) && isset($body->message) && $body->message === 'checkpoint_required') {
-                    $checkpointUrl = $body->checkpoint_url ?? 'https://www.instagram.com/challenge/';
+                // 429 voor checkpoint check, daarna gewone rate limit handling.
+                if ($response->code === static::HTTP_TOO_MANY_REQUESTS) {
+                    static::throwForResponse($response, 'getReelsByUserId');
+                }
+
+                // Instagram vereist een security checkpoint — account moet geverifieerd worden.
+                if (is_object($responseBody) && isset($responseBody->message) && $responseBody->message === 'checkpoint_required') {
+                    $checkpointUrl = $responseBody->checkpoint_url ?? 'https://www.instagram.com/challenge/';
                     throw new InstagramAuthException(
                         'Instagram vereist een security checkpoint voor dit account. '
                         . 'Ga naar ' . $checkpointUrl . ' en voltooi de verificatie in je browser. '

@@ -55,9 +55,23 @@ return [
     |
     */
     'retry' => [
-        'max_attempts' => (int) env('INSTAGRAM_SCRAPER_RETRY_MAX', 3),
-        'delay_ms'     => (int) env('INSTAGRAM_SCRAPER_RETRY_DELAY_MS', 1000),
-        'on_codes'     => [429, 500, 502, 503, 504],
+        'max_attempts'        => (int) env('INSTAGRAM_SCRAPER_RETRY_MAX', 2),
+        'delay_ms'            => (int) env('INSTAGRAM_SCRAPER_RETRY_DELAY_MS', 2000),
+
+        /*
+        | Vertraging specifiek voor HTTP 429 (rate limit). Instagram blokkeert
+        | doorgaans 30-60+ seconden per rate-limit event; de normale retry-delay
+        | (delay_ms) is hiervoor veel te kort.
+        |
+        | Standaard: 60 000 ms = 60 seconden per poging.
+        | Bij max_attempts=2 wacht de scraper dus 60s voor de tweede poging.
+        | Als de 429 aanhoudt, wordt InstagramRateLimitException gegooid.
+        |
+        | Zet op 0 om 429-retries uit te schakelen (fout meteen gooien).
+        */
+        'rate_limit_delay_ms' => (int) env('INSTAGRAM_SCRAPER_RATE_LIMIT_DELAY_MS', 60_000),
+
+        'on_codes'            => [429, 500, 502, 503, 504],
     ],
 
     /*

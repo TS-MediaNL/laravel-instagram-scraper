@@ -45,6 +45,7 @@ final class LaravelInstagramScraperServiceProvider extends ServiceProvider
                 maxAttempts: max(1, (int) ($retryConfig['max_attempts'] ?? 3)),
                 retryDelayMs: max(0, (int) ($retryConfig['delay_ms'] ?? 1000)),
                 retryOnCodes: (array) ($retryConfig['on_codes'] ?? [429, 500, 502, 503, 504]),
+                rateLimitDelayMs: max(0, (int) ($retryConfig['rate_limit_delay_ms'] ?? 60_000)),
             );
 
             $cache    = $app->make(CacheInterface::class);
